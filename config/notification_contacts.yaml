@@ -1,0 +1,29 @@
+# 紧急联系人配置
+
+contacts: []
+# 示例:
+# - name: "王小明"
+#   phone: "13800138000"
+#   relationship: "孙子"
+#   notification_levels:
+#     - P0  # 紧急 (生命安全)
+#     - P1  # 重要 (情绪/健康异常)
+#     - P2  # 每日摘要
+
+# 通知规则
+rules:
+  p0:
+    description: "紧急 - 生命安全"
+    channels: ["sms", "phone_call"]
+    delay_seconds: 0
+    rate_limit: null  # 不限流
+  p1:
+    description: "重要 - 健康/情绪异常"
+    channels: ["sms"]
+    delay_seconds: 300
+    rate_limit_per_hour: 3
+  p2:
+    description: "一般 - 每日摘要"
+    channels: ["app_message"]
+    schedule: "daily_20:00"
+    rate_limit_per_day: 1
