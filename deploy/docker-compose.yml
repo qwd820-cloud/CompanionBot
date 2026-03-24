@@ -1,0 +1,93 @@
+# CompanionBot DGX Spark 部署 — Docker Compose
+# 适配 DGX Spark UMA (128GB 统一内存，CPU/GPU 共享)
+#
+# DGX Spark 特殊之处:
+#   1. UMA 架构 — GPU 没有独立显存，和 CPU 共享 128GB LPDDR5x
+#   2. 单 GPU (GB10) — 所有服务共享同一个 GPU
+#   3. ARM aarch64 — 必须使用 ARM 兼容镜像
+#   4. 内存带宽是瓶颈 (273 GB/s) — 需要最大化可用内存
+
+services:
+  companion-bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: companion-bot
+    ports:
+      - "8765:8765"
+    volumes:
+      - companion-data:/app/server/data
+      - ../config:/app/config:ro
+    environment:
+      - LOCAL_LLM_URL=http://llm-engine:8000/v1
+      - CUDA_VISIBLE_DEVICES=0
+      # UMA 内存管理: 限制感知层模型的 GPU 内存占用
+      # 感知层 (SpeechBrain + InsightFace + FunASR + VAD) 共需约 4~6GB
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - TORCH_CUDA_ALLOC_FRACTION=0.15
+    # --- DGX Spark UMA 关键配置 ---
+    ipc: host                        # 共享宿主机共享内存，PyTorch/NCCL 需要
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1                     # 解除内存锁定限制，避免大模型加载失败
+      stack:
+        soft: 67108864
+        hard: 67108864               # 64MB 栈空间
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      - llm-engine
+    restart: unless-stopped
+    networks:
+      - companion-net
+
+  llm-engine:
+    image: lmsysorg/sglang:latest
+    container_name: companion-llm
+    command: >
+      python -m sglang.launch_server
+      --model-path Qwen/Qwen3.5-27B
+      --port 8000
+      --host 0.0.0.0
+      --tp 1
+      --mem-fraction-static 0.60
+      --trust-remote-code
+    volumes:
+      - llm-models:/root/.cache
+      # 复用宿主机 HuggingFace 缓存，避免重复下载模型
+      - ${HF_HOME:-~/.cache/huggingface}:/root/.cache/huggingface
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    # --- DGX Spark UMA 关键配置 ---
+    ipc: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      stack:
+        soft: 67108864
+        hard: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - companion-net
+
+volumes:
+  companion-data:
+  llm-models:
+
+networks:
+  companion-net:
+    driver: bridge

@@ -1,0 +1,20 @@
+# 家庭成员初始配置示例
+# 实际使用时通过 enroll_member.py 脚本注册
+
+members: []
+# 示例:
+# - person_id: "grandpa_wang"
+#   name: "王爷爷"
+#   nickname: "爷爷"
+#   role: elder        # elder / child / adult
+#   age: 75
+#   relationship: "爷爷"
+#   interests: ["下棋", "听戏曲", "种花"]
+#   health_conditions: ["高血压", "膝盖不好"]
+#   communication_preferences:
+#     speech_rate: slow
+#     topics: ["怀旧", "家常"]
+#     taboos: []
+#   recent_concerns: ["孙子要高考了"]
+#   voiceprint_enrolled: true
+#   face_enrolled: true

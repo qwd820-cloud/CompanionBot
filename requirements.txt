@@ -1,0 +1,42 @@
+# CompanionBot 依赖
+
+# 后端框架
+fastapi>=0.104.0
+uvicorn>=0.24.0
+websockets>=12.0
+
+# PyTorch (DGX Spark 应已有 CUDA 版本)
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# 声纹识别
+speechbrain>=1.0.0
+
+# 人脸识别
+insightface>=0.7.3
+onnxruntime-gpu>=1.16.0
+
+# 向量数据库
+chromadb>=0.4.0
+
+# VAD
+silero-vad>=5.1
+
+# TTS
+edge-tts>=6.1.0
+
+# ASR (选一)
+funasr>=1.0.0
+# openai-whisper>=20231117
+
+# LLM 推理
+openai>=1.6.0
+
+# 工具依赖
+pyyaml>=6.0
+numpy>=1.24.0
+opencv-python>=4.8.0
+pillow>=10.0.0
+aiofiles>=23.0.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
