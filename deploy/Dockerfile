@@ -1,16 +1,19 @@
 # CompanionBot DGX Spark 部署 Dockerfile
-# 基于 NVIDIA CUDA 基础镜像，适配 DGX Spark 环境
+# 适配 DGX Spark (Grace Blackwell GB10, ARM aarch64, CUDA 12.8+)
 
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM nvcr.io/nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV CUDA_VISIBLE_DEVICES=all
+# Grace Blackwell GB10 的 compute capability
+ENV TORCH_CUDA_ARCH_LIST="10.0"
 
 # 系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3-pip \
+    python3.11 python3.11-venv python3.11-dev python3-pip \
     libsndfile1 ffmpeg libgl1-mesa-glx libglib2.0-0 \
+    git build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1

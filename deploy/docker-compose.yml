@@ -1,5 +1,5 @@
 # CompanionBot DGX Spark 部署 — Docker Compose
-# 包含主服务 + 本地 LLM 推理引擎
+# DGX Spark 只有 1 个 GPU (GB10)，两个服务共享
 
 services:
   companion-bot:
@@ -13,7 +13,6 @@ services:
       - companion-data:/app/server/data
       - ../config:/app/config:ro
     environment:
-      - KIMI_API_KEY=${KIMI_API_KEY:-}
       - LOCAL_LLM_URL=http://llm-engine:8000/v1
       - CUDA_VISIBLE_DEVICES=0
     deploy:
@@ -21,7 +20,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              count: all
               capabilities: [gpu]
     depends_on:
       - llm-engine
@@ -38,6 +37,7 @@ services:
       --port 8000
       --host 0.0.0.0
       --tp 1
+      --mem-fraction-static 0.80
       --trust-remote-code
     volumes:
       - llm-models:/root/.cache
@@ -46,7 +46,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              count: all
               capabilities: [gpu]
     restart: unless-stopped
     networks:
