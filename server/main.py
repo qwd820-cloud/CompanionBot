@@ -98,16 +98,17 @@ async def lifespan(app: FastAPI):
     )
     app.state.long_term_profile = LongTermProfile(db_path=db_path)
     app.state.working_memory = WorkingMemory()
+    app.state.llm_client = LLMClient()
     app.state.consolidation = MemoryConsolidation(
         episodic=app.state.episodic_memory,
         semantic=app.state.semantic_memory,
         profile=app.state.long_term_profile,
+        llm_client=app.state.llm_client,
     )
 
     # 人格层
     app.state.personality = PersonalityEngine(config=personality_cfg)
     app.state.intervention = InterventionDecider()
-    app.state.llm_client = LLMClient()
     app.state.prompt_builder = PromptBuilder(
         personality=app.state.personality,
         episodic=app.state.episodic_memory,
