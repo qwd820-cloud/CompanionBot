@@ -45,6 +45,7 @@ class VADProcessor:
         self._speech_start: float | None = None
         self._speech_buffer: list[np.ndarray] = []
         self._silence_count = 0
+        self._processed_samples = 0  # 累计已处理的样本数，用于计算时间戳
 
     async def initialize(self):
         """加载 Silero VAD 模型"""
@@ -79,12 +80,14 @@ class VADProcessor:
             self._buffer = self._buffer[WINDOW_SIZE:]
 
             is_speech = self._detect_speech(window)
+            current_ms = (self._processed_samples / self.sample_rate) * 1000
+            self._processed_samples += WINDOW_SIZE
             window_ms = (WINDOW_SIZE / self.sample_rate) * 1000
 
             if is_speech:
                 self._silence_count = 0
                 if self._speech_start is None:
-                    self._speech_start = 0.0
+                    self._speech_start = current_ms
                 self._speech_buffer.append(window)
             else:
                 self._silence_count += 1
@@ -135,5 +138,6 @@ class VADProcessor:
         self._speech_start = None
         self._speech_buffer = []
         self._silence_count = 0
+        self._processed_samples = 0
         if self.model is not None:
             self.model.reset_states()

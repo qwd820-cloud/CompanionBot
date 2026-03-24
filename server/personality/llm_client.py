@@ -1,6 +1,7 @@
 """LLM 调用客户端 — 全部使用本地 Qwen3.5"""
 
 import logging
+import os
 
 logger = logging.getLogger("companion_bot.llm_client")
 
@@ -22,12 +23,31 @@ class LLMClient:
 
     def __init__(
         self,
-        local_base_url: str = "http://localhost:8000/v1",
+        local_base_url: str | None = None,
         model_name: str = "qwen3.5",
     ):
-        self.local_base_url = local_base_url
+        # 优先读环境变量 (Docker 中 companion-bot → llm-engine)
+        self.local_base_url = (
+            local_base_url
+            or os.environ.get("LOCAL_LLM_URL", "http://localhost:8000/v1")
+        )
         self.model_name = model_name
         self._client = None
+        self._available = False
+
+    async def check_health(self) -> bool:
+        """探测 LLM 引擎是否可用"""
+        client = self._get_client()
+        try:
+            models = await client.models.list()
+            model_ids = [m.id for m in models.data]
+            self._available = True
+            logger.info(f"LLM 引擎可用: {self.local_base_url}, 模型: {model_ids}")
+            return True
+        except Exception as e:
+            self._available = False
+            logger.warning(f"LLM 引擎不可用 ({self.local_base_url}): {e}")
+            return False
 
     def _get_client(self):
         """懒加载本地 LLM 客户端"""

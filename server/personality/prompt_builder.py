@@ -38,7 +38,15 @@ class PromptBuilder:
         2. 记忆上下文 (长期档案 + 情景记忆 + 语义记忆)
         3. 当前对话历史
         """
-        system_prompt = await self._build_system_prompt(person_id)
+        # 提取最近用户发言作为语义检索 query
+        turns = context.get("turns", [])
+        recent_query = ""
+        for t in reversed(turns):
+            if t.get("role") == "user" and t.get("text"):
+                recent_query = t["text"]
+                break
+
+        system_prompt = await self._build_system_prompt(person_id, recent_query)
         messages = [{"role": "system", "content": system_prompt}]
 
         # 添加当前对话历史
@@ -53,7 +61,9 @@ class PromptBuilder:
 
         return messages
 
-    async def _build_system_prompt(self, person_id: str) -> str:
+    async def _build_system_prompt(
+        self, person_id: str, recent_query: str = ""
+    ) -> str:
         """构建系统 prompt"""
         parts = []
 
@@ -68,8 +78,8 @@ class PromptBuilder:
         if profile_prompt:
             parts.append(profile_prompt)
 
-        # 4. 相关记忆
-        memory_prompt = await self._memory_prompt(person_id)
+        # 4. 相关记忆 (情景 + 语义 RAG)
+        memory_prompt = await self._memory_prompt(person_id, recent_query)
         if memory_prompt:
             parts.append(memory_prompt)
 
@@ -160,8 +170,10 @@ class PromptBuilder:
 
         return prompt
 
-    async def _memory_prompt(self, person_id: str) -> str:
-        """相关记忆 prompt"""
+    async def _memory_prompt(
+        self, person_id: str, recent_query: str = ""
+    ) -> str:
+        """相关记忆 prompt (情景记忆 + 语义 RAG 检索)"""
         if person_id in ("unknown", "bot"):
             return ""
 
@@ -177,8 +189,19 @@ class PromptBuilder:
                 )
                 parts.append(f"  - [{ts}] {ep.summary} (情绪: {ep.emotion_tag})")
 
-        # 语义记忆: 待检索 (需要当前对话内容作为 query)
-        # 实际检索在 ws_handler 的对话流程中完成
+        # 语义记忆: 用当前用户发言检索相关历史对话
+        if recent_query:
+            try:
+                semantic_results = await self.semantic.search(
+                    query=recent_query, person_id=person_id, top_k=5
+                )
+                if semantic_results:
+                    parts.append("相关历史对话:")
+                    for mem in semantic_results:
+                        if mem.get("score", 0) > 0.3:
+                            parts.append(f"  - {mem['text']}")
+            except Exception as e:
+                logger.debug(f"语义记忆检索跳过: {e}")
 
         if not parts:
             return ""

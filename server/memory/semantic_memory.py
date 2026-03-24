@@ -16,6 +16,10 @@ class SemanticMemory:
         self.client = None
         self.collection = None
 
+    async def initialize(self):
+        """启动时初始化 ChromaDB 连接"""
+        self._ensure_collection()
+
     def _ensure_collection(self):
         """确保 ChromaDB 集合可用"""
         if self.collection is not None:

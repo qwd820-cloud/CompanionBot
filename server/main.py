@@ -131,8 +131,14 @@ async def lifespan(app: FastAPI):
         app.state.face_id.initialize(),
         app.state.asr.initialize(),
         app.state.episodic_memory.initialize(),
+        app.state.semantic_memory.initialize(),
         app.state.long_term_profile.initialize(),
     )
+
+    # LLM 引擎健康检查 (非阻塞，启动后可能还在加载模型)
+    llm_ok = await app.state.llm_client.check_health()
+    if not llm_ok:
+        logger.warning("LLM 引擎尚未就绪，对话功能暂不可用。引擎启动后将自动恢复。")
 
     logger.info("CompanionBot 所有子系统初始化完成")
     yield

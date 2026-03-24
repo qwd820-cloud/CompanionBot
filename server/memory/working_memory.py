@@ -27,6 +27,7 @@ class Session:
     turns: list[Turn] = field(default_factory=list)
     start_time: float = field(default_factory=time.time)
     latest_face: dict | None = None
+    latest_face_time: float = 0.0
     active_person_ids: set[str] = field(default_factory=set)
 
 
@@ -88,18 +89,26 @@ class WorkingMemory:
             "latest_face": session.latest_face,
         }
 
-    def get_latest_face(self, session_id: str) -> dict | None:
-        """获取最近的人脸识别结果"""
+    def get_latest_face(
+        self, session_id: str, max_age_sec: float = 5.0
+    ) -> dict | None:
+        """
+        获取最近的人脸识别结果。
+        max_age_sec: 结果的最大有效期 (秒)，超时则视为过期不参与融合。
+        """
         session = self.sessions.get(session_id)
-        if session:
-            return session.latest_face
+        if session and session.latest_face:
+            age = time.time() - session.latest_face_time
+            if age <= max_age_sec:
+                return session.latest_face
         return None
 
     def update_face_result(self, session_id: str, face_result: dict):
-        """更新最近的人脸识别结果"""
+        """更新最近的人脸识别结果 (带时间戳)"""
         session = self.sessions.get(session_id)
         if session:
             session.latest_face = face_result
+            session.latest_face_time = time.time()
 
     def is_addressed_to_bot(self, session_id: str, text: str) -> bool:
         """判断当前说话是否在对机器人说话"""
