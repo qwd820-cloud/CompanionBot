@@ -89,7 +89,15 @@ dev_mode() {
 # Docker 部署
 docker_deploy() {
     if ! command -v docker &>/dev/null; then
-        error "Docker 未安装"
+        warn "Docker 未安装"
+        log "切换到裸机部署模式: ./deploy/deploy_bare.sh setup"
+        exec "$SCRIPT_DIR/deploy_bare.sh" setup
+    fi
+
+    if ! docker info &>/dev/null; then
+        warn "Docker 无权限 (需要加入 docker 组或使用 sudo)"
+        log "切换到裸机部署模式: ./deploy/deploy_bare.sh setup"
+        exec "$SCRIPT_DIR/deploy_bare.sh" setup
     fi
 
     check_gpu
