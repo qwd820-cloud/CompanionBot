@@ -8,7 +8,7 @@
 手机端 (感知终端)  ◄── WebSocket ──►  DGX Spark 后端 (大脑)
 ├── 麦克风采集音频                       ├── 声纹识别 (SpeechBrain)
 ├── 摄像头采集视频                       ├── 人脸识别 (InsightFace)
-├── 扬声器播放回复                       ├── LLM 推理 (Qwen3.5 / Kimi K2.5)
+├── 扬声器播放回复                       ├── LLM 推理 (本地 Qwen3.5)
 └── 短信发送通知                         ├── 四层记忆系统
                                          └── 人格引擎 + 安全预警
 ```
@@ -49,6 +49,6 @@ pytest tests/ -v
 - **声纹识别**: SpeechBrain ECAPA-TDNN
 - **人脸识别**: InsightFace buffalo_l
 - **ASR**: FunASR Paraformer / Whisper
-- **LLM**: 本地 Qwen3.5 + 云端 Kimi K2.5
+- **LLM**: 本地 Qwen3.5 (via SGLang)
 - **TTS**: Edge-TTS
 - **存储**: SQLite + ChromaDB
