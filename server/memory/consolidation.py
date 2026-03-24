@@ -19,6 +19,15 @@ logger = logging.getLogger("companion_bot.consolidation")
 # 重要性阈值
 IMPORTANCE_THRESHOLD = 0.3
 
+
+def _ensure_str_list(val) -> list[str]:
+    """确保值为字符串列表，LLM 可能返回字符串或 None"""
+    if isinstance(val, list):
+        return [str(v) for v in val if v]
+    if isinstance(val, str) and val:
+        return [val]
+    return []
+
 # LLM 对话分析 prompt
 ANALYSIS_PROMPT = """\
 你是一个记忆提取系统。分析以下对话，输出 JSON (不要输出其他内容):
@@ -196,9 +205,9 @@ class MemoryConsolidation:
             "summary": summary,
             "importance": importance,
             "emotion": emotion,
-            "new_interests": data.get("new_interests", []),
-            "new_health": data.get("new_health", []),
-            "new_concerns": data.get("new_concerns", []),
+            "new_interests": _ensure_str_list(data.get("new_interests", [])),
+            "new_health": _ensure_str_list(data.get("new_health", [])),
+            "new_concerns": _ensure_str_list(data.get("new_concerns", [])),
         }
 
     def _analyze_with_rules(self, person_id: str, text: str) -> dict:
@@ -241,31 +250,34 @@ class MemoryConsolidation:
 
     async def _update_profile(self, person_id: str, analysis: dict):
         """根据分析结果更新长期档案"""
-        profile = await self.profile.get_profile(person_id)
-        if profile is None:
-            logger.warning(f"档案不存在，跳过更新: {person_id}")
-            return
+        try:
+            profile = await self.profile.get_profile(person_id)
+            if profile is None:
+                logger.warning(f"档案不存在，跳过更新: {person_id}")
+                return
 
-        new_interests = [
-            i for i in analysis.get("new_interests", [])
-            if i and i not in profile.get("interests", [])
-        ]
-        if new_interests:
-            await self.profile.update_interests(person_id, new_interests)
-            logger.info(f"档案更新兴趣: {person_id} += {new_interests}")
+            new_interests = [
+                i for i in analysis.get("new_interests", [])
+                if i and i not in profile.get("interests", [])
+            ]
+            if new_interests:
+                await self.profile.update_interests(person_id, new_interests)
+                logger.info(f"档案更新兴趣: {person_id} += {new_interests}")
 
-        new_health = [
-            h for h in analysis.get("new_health", [])
-            if h and h not in profile.get("health_conditions", [])
-        ]
-        if new_health:
-            await self.profile.update_health(person_id, new_health)
-            logger.info(f"档案更新健康: {person_id} += {new_health}")
+            new_health = [
+                h for h in analysis.get("new_health", [])
+                if h and h not in profile.get("health_conditions", [])
+            ]
+            if new_health:
+                await self.profile.update_health(person_id, new_health)
+                logger.info(f"档案更新健康: {person_id} += {new_health}")
 
-        new_concerns = analysis.get("new_concerns", [])
-        if new_concerns:
-            await self.profile.update_concerns(person_id, new_concerns)
-            logger.info(f"档案更新关注: {person_id} = {new_concerns}")
+            new_concerns = analysis.get("new_concerns", [])
+            if new_concerns:
+                await self.profile.update_concerns(person_id, new_concerns)
+                logger.info(f"档案更新关注: {person_id} = {new_concerns}")
+        except Exception as e:
+            logger.error(f"档案更新失败: {person_id}: {e}")
 
     def _detect_interests_by_rules(self, text: str) -> list[str]:
         """规则检测兴趣"""
@@ -299,8 +311,11 @@ class MemoryConsolidation:
         """格式化对话为文本"""
         lines = []
         for t in turns:
+            text = t.get("text", "")
+            if not text:
+                continue
             speaker = t.get("person_id", "unknown")
             if t.get("role") == "assistant":
                 speaker = BOT_NAME
-            lines.append(f"{speaker}: {t['text']}")
+            lines.append(f"{speaker}: {text}")
         return "\n".join(lines)
