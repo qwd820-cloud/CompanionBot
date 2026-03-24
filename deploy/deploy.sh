@@ -22,13 +22,21 @@ log() { echo -e "${GREEN}[CompanionBot]${NC} $1"; }
 warn() { echo -e "${YELLOW}[警告]${NC} $1"; }
 error() { echo -e "${RED}[错误]${NC} $1"; exit 1; }
 
-# 检查 NVIDIA GPU
+# 检查 NVIDIA GPU 并显示 UMA 内存状态
 check_gpu() {
     if ! command -v nvidia-smi &>/dev/null; then
         error "未检测到 nvidia-smi，请确认 CUDA 驱动已安装"
     fi
     log "GPU 信息:"
-    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    nvidia-smi --query-gpu=name,memory.total,memory.free,memory.used --format=csv,noheader
+
+    # UMA 架构下 cudaMemGetInfo 报告可能偏低，显示系统实际可用内存作为参考
+    local mem_available
+    mem_available=$(awk '/MemAvailable/ {printf "%.1f GB", $2/1024/1024}' /proc/meminfo 2>/dev/null)
+    if [ -n "$mem_available" ]; then
+        log "系统可用内存 (UMA 共享): ${mem_available}"
+        log "提示: UMA 架构下 GPU 和 CPU 共享内存，nvidia-smi 报告可能低于实际可分配量"
+    fi
 }
 
 # DGX Spark UMA 优化: 刷新系统 buffer cache 释放可用内存给 GPU

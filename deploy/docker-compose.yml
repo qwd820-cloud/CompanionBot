@@ -21,6 +21,10 @@ services:
     environment:
       - LOCAL_LLM_URL=http://llm-engine:8000/v1
       - CUDA_VISIBLE_DEVICES=0
+      # UMA 内存管理: 限制感知层模型的 GPU 内存占用
+      # 感知层 (SpeechBrain + InsightFace + FunASR + VAD) 共需约 4~6GB
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - TORCH_CUDA_ALLOC_FRACTION=0.15
     # --- DGX Spark UMA 关键配置 ---
     ipc: host                        # 共享宿主机共享内存，PyTorch/NCCL 需要
     ulimits:
@@ -52,7 +56,7 @@ services:
       --port 8000
       --host 0.0.0.0
       --tp 1
-      --mem-fraction-static 0.80
+      --mem-fraction-static 0.60
       --trust-remote-code
     volumes:
       - llm-models:/root/.cache

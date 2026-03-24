@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -41,10 +42,35 @@ def load_config(name: str) -> dict:
         return yaml.safe_load(f)
 
 
+def _configure_gpu_memory():
+    """
+    配置 GPU 内存分配策略 — DGX Spark UMA 适配。
+
+    UMA 架构下 GPU 和 CPU 共享 128GB 内存，感知层模型 (SpeechBrain,
+    InsightFace, FunASR) 与 LLM 推理引擎 (SGLang) 需要协调内存使用。
+    限制本进程的 GPU 内存占比，避免与 SGLang 争抢。
+    """
+    try:
+        import torch
+        if torch.cuda.is_available():
+            # 限制本进程最多使用 GPU 可见内存的 15%
+            # 感知层模型总共约需 4~6GB，128GB 的 15% ≈ 19GB 足够
+            fraction = float(os.environ.get("TORCH_CUDA_ALLOC_FRACTION", "0.15"))
+            torch.cuda.set_per_process_memory_fraction(fraction)
+            device = torch.cuda.get_device_name(0)
+            logger.info(
+                f"CUDA 设备: {device}, 内存占比限制: {fraction:.0%}"
+            )
+    except Exception as e:
+        logger.warning(f"GPU 内存配置跳过: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """初始化和清理所有子系统"""
     logger.info("CompanionBot 启动中...")
+
+    _configure_gpu_memory()
 
     personality_cfg = load_config("personality.yaml")
     family_cfg = load_config("family_members.yaml")
