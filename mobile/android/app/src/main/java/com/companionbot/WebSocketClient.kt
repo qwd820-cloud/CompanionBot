@@ -1,10 +1,10 @@
 package com.companionbot
 
+import android.util.Base64
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
 import okhttp3.*
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
  *
  * 消息协议:
  * - 二进制: [1字节类型] + [payload] (音频=1, 视频=2, TTS=4)
- * - 文本: JSON 消息 (控制指令、回复等)
+ * - 文本: JSON 消息 (控制指令、回复、注册等)
  */
 class WebSocketClient(
     private val listener: WebSocketListener
@@ -102,6 +102,68 @@ class WebSocketClient(
             addProperty("type", "text_input")
             addProperty("person_id", personId)
             addProperty("text", text)
+        }
+        webSocket?.send(gson.toJson(msg))
+    }
+
+    // ============= 注册相关 =============
+
+    /**
+     * 发送声纹注册请求。
+     * 将 PCM 音频以 Base64 编码通过 JSON 发送到后端。
+     * @param personId 成员 ID
+     * @param audioSamples 多段 PCM 音频字节
+     */
+    fun sendEnrollVoice(personId: String, audioSamples: List<ByteArray>) {
+        if (!isConnected) return
+        val samplesBase64 = audioSamples.map { Base64.encodeToString(it, Base64.NO_WRAP) }
+        val msg = JsonObject().apply {
+            addProperty("type", "enroll_voice")
+            addProperty("person_id", personId)
+            addProperty("audio_count", audioSamples.size)
+            add("audio_samples", gson.toJsonTree(samplesBase64))
+        }
+        webSocket?.send(gson.toJson(msg))
+    }
+
+    /**
+     * 发送人脸注册请求。
+     * 将 JPEG 照片以 Base64 编码通过 JSON 发送到后端。
+     * @param personId 成员 ID
+     * @param photos 多张 JPEG 字节
+     */
+    fun sendEnrollFace(personId: String, photos: List<ByteArray>) {
+        if (!isConnected) return
+        val photosBase64 = photos.map { Base64.encodeToString(it, Base64.NO_WRAP) }
+        val msg = JsonObject().apply {
+            addProperty("type", "enroll_face")
+            addProperty("person_id", personId)
+            addProperty("photo_count", photos.size)
+            add("photos", gson.toJsonTree(photosBase64))
+        }
+        webSocket?.send(gson.toJson(msg))
+    }
+
+    /**
+     * 发送成员档案信息。
+     */
+    fun sendEnrollProfile(
+        personId: String,
+        name: String,
+        nickname: String,
+        role: String,
+        age: Int,
+        relationship: String
+    ) {
+        if (!isConnected) return
+        val msg = JsonObject().apply {
+            addProperty("type", "enroll_profile")
+            addProperty("person_id", personId)
+            addProperty("name", name)
+            addProperty("nickname", nickname)
+            addProperty("role", role)
+            addProperty("age", age)
+            addProperty("relationship", relationship)
         }
         webSocket?.send(gson.toJson(msg))
     }

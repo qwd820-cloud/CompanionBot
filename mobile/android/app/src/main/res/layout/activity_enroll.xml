@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- 步骤指示 -->
+    <TextView
+        android:id="@+id/tvStep"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="第 1 步 / 共 3 步: 填写信息"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="#1976D2"
+        android:paddingBottom="12dp" />
+
+    <!-- === 第 1 步: 基本信息 === -->
+    <LinearLayout
+        android:id="@+id/layoutStep1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="visible">
+
+        <EditText
+            android:id="@+id/etName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="姓名 (如: 王爷爷)"
+            android:inputType="textPersonName" />
+
+        <EditText
+            android:id="@+id/etNickname"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="称呼 (机器人怎么叫 TA, 如: 爷爷)"
+            android:inputType="text"
+            android:layout_marginTop="4dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp">
+
+            <EditText
+                android:id="@+id/etAge"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="年龄"
+                android:inputType="number" />
+
+            <EditText
+                android:id="@+id/etRelationship"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="关系 (如: 外公)"
+                android:inputType="text"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
+
+        <!-- 角色选择 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="角色类型:"
+            android:layout_marginTop="8dp" />
+
+        <RadioGroup
+            android:id="@+id/rgRole"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/rbElder"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="老人"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/rbChild"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="小孩"
+                android:layout_marginStart="16dp" />
+
+            <RadioButton
+                android:id="@+id/rbAdult"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="成人"
+                android:layout_marginStart="16dp" />
+        </RadioGroup>
+    </LinearLayout>
+
+    <!-- === 第 2 步: 声纹录制 === -->
+    <LinearLayout
+        android:id="@+id/layoutStep2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="请录制 3~5 段自然说话\n每段 5~10 秒，可以随便说点什么"
+            android:textSize="14sp"
+            android:lineSpacingMultiplier="1.3" />
+
+        <TextView
+            android:id="@+id/tvVoiceProgress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="已录制: 0 / 3 段"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="#1976D2"
+            android:gravity="center"
+            android:layout_marginTop="16dp" />
+
+        <!-- 录音按钮 -->
+        <Button
+            android:id="@+id/btnRecord"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="按住录音"
+            android:textSize="16sp"
+            android:layout_marginTop="12dp"
+            android:backgroundTint="#4CAF50" />
+
+        <TextView
+            android:id="@+id/tvRecordHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="提示: 点击开始录音，再点击停止"
+            android:textSize="12sp"
+            android:textColor="#999999"
+            android:gravity="center"
+            android:layout_marginTop="8dp" />
+    </LinearLayout>
+
+    <!-- === 第 3 步: 人脸采集 === -->
+    <LinearLayout
+        android:id="@+id/layoutStep3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="请对准摄像头拍摄 5~10 张照片\n尝试不同角度和表情"
+            android:textSize="14sp"
+            android:lineSpacingMultiplier="1.3" />
+
+        <TextView
+            android:id="@+id/tvPhotoProgress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="已拍摄: 0 / 5 张"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="#1976D2"
+            android:gravity="center"
+            android:layout_marginTop="16dp" />
+
+        <!-- 摄像头预览 -->
+        <TextureView
+            android:id="@+id/texturePreview"
+            android:layout_width="match_parent"
+            android:layout_height="300dp"
+            android:layout_marginTop="8dp" />
+
+        <Button
+            android:id="@+id/btnCapture"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="拍照"
+            android:textSize="16sp"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="#2196F3" />
+
+        <TextView
+            android:id="@+id/tvPhotoHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="提示: 正面、左转、右转、抬头、微笑各一张效果最佳"
+            android:textSize="12sp"
+            android:textColor="#999999"
+            android:gravity="center"
+            android:layout_marginTop="4dp" />
+    </LinearLayout>
+
+    <!-- 底部占位，把按钮推到底部 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- 状态/反馈 -->
+    <TextView
+        android:id="@+id/tvEnrollStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="13sp"
+        android:textColor="#666666"
+        android:gravity="center"
+        android:paddingBottom="8dp" />
+
+    <!-- 导航按钮 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnPrevStep"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="上一步"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btnNextStep"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="下一步"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
+</LinearLayout>

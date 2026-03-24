@@ -6,6 +6,7 @@ import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -16,7 +17,7 @@ import kotlinx.coroutines.*
  * 前台服务 — 持续采集麦克风 16kHz PCM 音频流
  *
  * 使用前台服务确保 Android 系统不会杀死后台音频采集。
- * 采集到的音频通过回调传递给 WebSocket 发送。
+ * MainActivity 通过 bindService 绑定后，设置 onAudioData 回调接收音频数据。
  */
 class AudioCaptureService : Service() {
     companion object {
@@ -28,13 +29,20 @@ class AudioCaptureService : Service() {
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     }
 
+    /** Binder 供 MainActivity 绑定并设置回调 */
+    inner class LocalBinder : Binder() {
+        val service: AudioCaptureService get() = this@AudioCaptureService
+    }
+
+    private val binder = LocalBinder()
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    /** 音频数据回调 — 由 MainActivity 绑定后设置 */
     var onAudioData: ((ByteArray) -> Unit)? = null
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onCreate() {
         super.onCreate()
@@ -59,6 +67,7 @@ class AudioCaptureService : Service() {
     }
 
     private fun startRecording() {
+        if (isRecording) return
         val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
         audioRecord = AudioRecord(
             MediaRecorder.AudioSource.MIC,
@@ -89,7 +98,7 @@ class AudioCaptureService : Service() {
         }
     }
 
-    private fun stopRecording() {
+    fun stopRecording() {
         isRecording = false
         audioRecord?.stop()
         audioRecord?.release()

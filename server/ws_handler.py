@@ -1,6 +1,7 @@
 """WebSocket 处理器 — 音频流/视频帧的实时通信"""
 
 import asyncio
+import base64
 import json
 import logging
 import struct
@@ -120,9 +121,11 @@ async def _handle_text(app, client_id: str, text: str):
 
     msg_type = msg.get("type")
     if msg_type == "enroll_voice":
-        await _handle_enroll_voice(app, msg)
+        await _handle_enroll_voice(app, client_id, msg)
     elif msg_type == "enroll_face":
-        await _handle_enroll_face(app, msg)
+        await _handle_enroll_face(app, client_id, msg)
+    elif msg_type == "enroll_profile":
+        await _handle_enroll_profile(app, client_id, msg)
     elif msg_type == "text_input":
         await _handle_text_input(app, client_id, msg)
 
@@ -246,22 +249,112 @@ async def _generate_and_respond(app, client_id: str, person_id: str):
         await manager.send_tts_audio(client_id, audio_data)
 
 
-async def _handle_enroll_voice(app, msg: dict):
-    """处理声纹注册请求"""
+async def _handle_enroll_voice(app, client_id: str, msg: dict):
+    """处理声纹注册请求 — 支持 Base64 编码的多段音频"""
     person_id = msg.get("person_id")
-    audio_data = msg.get("audio_data")
-    if person_id and audio_data:
-        await app.state.speaker_id.enroll(person_id, audio_data)
-        logger.info(f"声纹注册完成: {person_id}")
+    if not person_id:
+        return
+
+    # 兼容新协议 (Base64 列表) 和旧协议 (单段 bytes)
+    audio_samples_b64 = msg.get("audio_samples", [])
+    if audio_samples_b64:
+        import numpy as np
+        audio_samples = []
+        for b64_str in audio_samples_b64:
+            raw = base64.b64decode(b64_str)
+            pcm = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+            audio_samples.append(pcm)
+
+        try:
+            await app.state.speaker_id.enroll(person_id, audio_samples)
+            logger.info(f"声纹注册完成: {person_id}, {len(audio_samples)} 段")
+            await manager.send_json_message(client_id, {
+                "type": "enroll_result",
+                "step": "voice",
+                "success": True,
+                "message": f"声纹注册成功 ({len(audio_samples)} 段音频)",
+            })
+        except Exception as e:
+            logger.error(f"声纹注册失败: {person_id}: {e}")
+            await manager.send_json_message(client_id, {
+                "type": "enroll_result",
+                "step": "voice",
+                "success": False,
+                "message": f"声纹注册失败: {e}",
+            })
+    else:
+        # 旧协议回退
+        audio_data = msg.get("audio_data")
+        if audio_data:
+            await app.state.speaker_id.enroll(person_id, audio_data)
+            logger.info(f"声纹注册完成 (旧协议): {person_id}")
 
 
-async def _handle_enroll_face(app, msg: dict):
-    """处理人脸注册请求"""
+async def _handle_enroll_face(app, client_id: str, msg: dict):
+    """处理人脸注册请求 — 支持 Base64 编码的多张照片"""
     person_id = msg.get("person_id")
-    image_data = msg.get("image_data")
-    if person_id and image_data:
-        await app.state.face_id.enroll(person_id, image_data)
-        logger.info(f"人脸注册完成: {person_id}")
+    if not person_id:
+        return
+
+    photos_b64 = msg.get("photos", [])
+    if photos_b64:
+        image_data_list = [base64.b64decode(b64_str) for b64_str in photos_b64]
+
+        try:
+            await app.state.face_id.enroll(person_id, image_data_list)
+            logger.info(f"人脸注册完成: {person_id}, {len(image_data_list)} 张")
+            await manager.send_json_message(client_id, {
+                "type": "enroll_result",
+                "step": "face",
+                "success": True,
+                "message": f"人脸注册成功 ({len(image_data_list)} 张照片)",
+            })
+        except Exception as e:
+            logger.error(f"人脸注册失败: {person_id}: {e}")
+            await manager.send_json_message(client_id, {
+                "type": "enroll_result",
+                "step": "face",
+                "success": False,
+                "message": f"人脸注册失败: {e}",
+            })
+    else:
+        # 旧协议回退
+        image_data = msg.get("image_data")
+        if image_data:
+            await app.state.face_id.enroll(person_id, image_data)
+            logger.info(f"人脸注册完成 (旧协议): {person_id}")
+
+
+async def _handle_enroll_profile(app, client_id: str, msg: dict):
+    """处理成员档案注册"""
+    person_id = msg.get("person_id")
+    if not person_id:
+        return
+
+    try:
+        await app.state.long_term_profile.add_member(
+            person_id=person_id,
+            name=msg.get("name", ""),
+            nickname=msg.get("nickname", ""),
+            role=msg.get("role", "adult"),
+            age=msg.get("age", 0),
+            relationship=msg.get("relationship", ""),
+        )
+        logger.info(f"档案注册完成: {person_id}")
+        await manager.send_json_message(client_id, {
+            "type": "enroll_result",
+            "step": "profile",
+            "success": True,
+            "message": f"成员 {msg.get('name', person_id)} 注册成功",
+        })
+    except Exception as e:
+        logger.error(f"档案注册失败: {person_id}: {e}")
+        await manager.send_json_message(client_id, {
+            "type": "enroll_result",
+            "step": "profile",
+            "success": False,
+            "message": f"档案注册失败: {e}",
+        })
 
 
 async def _handle_text_input(app, client_id: str, msg: dict):

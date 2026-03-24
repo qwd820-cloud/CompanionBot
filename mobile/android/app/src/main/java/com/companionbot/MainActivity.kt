@@ -2,6 +2,7 @@ package com.companionbot
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
@@ -9,6 +10,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -22,7 +24,8 @@ import kotlinx.coroutines.*
  * 功能:
  * - 连接/断开 DGX Spark 后端
  * - 开始/停止音频采集和摄像头
- * - 显示机器人回复和状态
+ * - 显示机器人回复、说话人识别、情绪状态
+ * - 引导注册家庭成员 (跳转 EnrollActivity)
  * - 文本对话测试模式
  * - 接收并执行短信通知指令
  */
@@ -40,8 +43,38 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
     private lateinit var smsNotifier: SmsNotifier
     private var cameraManager: CameraManager? = null
 
+    // AudioCaptureService 绑定
+    private var audioService: AudioCaptureService? = null
+    private var serviceBound = false
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            val localBinder = binder as AudioCaptureService.LocalBinder
+            audioService = localBinder.service
+            audioService?.onAudioData = { pcmData ->
+                wsClient.sendAudio(pcmData)
+            }
+            serviceBound = true
+            Log.i(TAG, "AudioCaptureService 已绑定")
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            audioService = null
+            serviceBound = false
+        }
+    }
+
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isListening = false
+
+    // 注册页面结果回调
+    private val enrollLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            appendChat("[系统] 新成员注册成功")
+            appendStatus("家庭成员注册完成")
+        }
+    }
 
     private val requiredPermissions = arrayOf(
         Manifest.permission.RECORD_AUDIO,
@@ -81,6 +114,10 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
             }
         }
 
+        binding.btnEnroll.setOnClickListener {
+            openEnrollActivity()
+        }
+
         binding.btnSendText.setOnClickListener {
             val text = binding.etTextInput.text.toString().trim()
             if (text.isNotEmpty() && wsClient.isConnected) {
@@ -118,9 +155,10 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
 
         isListening = true
 
-        // 启动音频采集前台服务
+        // 启动并绑定音频采集前台服务
         val intent = Intent(this, AudioCaptureService::class.java)
         ContextCompat.startForegroundService(this, intent)
+        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         // 启动摄像头
         cameraManager = CameraManager(this).apply {
@@ -136,11 +174,28 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
 
     private fun stopListening() {
         isListening = false
+
+        // 解绑并停止音频服务
+        if (serviceBound) {
+            audioService?.onAudioData = null
+            unbindService(serviceConnection)
+            serviceBound = false
+        }
         stopService(Intent(this, AudioCaptureService::class.java))
+
         cameraManager?.stopCapture()
         cameraManager = null
         updateUI()
         appendStatus("停止监听")
+    }
+
+    private fun openEnrollActivity() {
+        val url = binding.etServerUrl.text.toString().trim()
+        val intent = Intent(this, EnrollActivity::class.java).apply {
+            putExtra(EnrollActivity.EXTRA_SERVER_URL, url)
+            putExtra(EnrollActivity.EXTRA_CLIENT_ID, "android_enroll")
+        }
+        enrollLauncher.launch(intent)
     }
 
     private fun updateUI() {
@@ -148,6 +203,7 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
             binding.btnConnect.text = if (wsClient.isConnected) "断开" else "连接"
             binding.btnListen.text = if (isListening) "停止监听" else "开始监听"
             binding.btnListen.isEnabled = wsClient.isConnected
+            binding.btnEnroll.isEnabled = wsClient.isConnected
             binding.btnSendText.isEnabled = wsClient.isConnected
             binding.tvStatus.text = when {
                 isListening -> "状态: 监听中"
@@ -171,7 +227,7 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
         }
     }
 
-    // WebSocket callbacks
+    // ========== WebSocket callbacks ==========
 
     override fun onConnected() {
         updateUI()
@@ -188,9 +244,17 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
 
         when (type) {
             "reply" -> {
+                val personId = json.get("person_id")?.asString ?: ""
                 val text = json.get("text")?.asString ?: ""
                 val emotion = json.get("emotion")?.asString ?: "neutral"
                 appendChat("小伴 [$emotion]: $text")
+                // 更新状态栏的说话人和情绪
+                runOnUiThread {
+                    if (personId.isNotEmpty() && personId != "unknown") {
+                        binding.tvSpeaker.text = "对话: $personId"
+                    }
+                    binding.tvEmotion.text = emotionLabel(emotion)
+                }
             }
 
             "notification" -> {
@@ -207,9 +271,14 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
                 val severity = json.get("severity")?.asString ?: ""
                 val message = json.get("message")?.asString ?: ""
                 appendStatus("[警报 $severity] $message")
-                if (json.get("action")?.asString == "play_alarm") {
-                    // TODO: 播放报警铃声
-                }
+                appendChat("[警报] $message")
+            }
+
+            "enroll_result" -> {
+                val success = json.get("success")?.asBoolean ?: false
+                val step = json.get("step")?.asString ?: ""
+                val message = json.get("message")?.asString ?: ""
+                appendStatus("注册[$step]: ${if (success) "成功" else "失败"} - $message")
             }
         }
     }
@@ -225,7 +294,20 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
         updateUI()
     }
 
-    // Permissions
+    /**
+     * 将情绪标签转为用户友好的中文显示
+     */
+    private fun emotionLabel(emotion: String): String = when (emotion) {
+        "happy" -> "开心"
+        "concerned" -> "关心"
+        "curious" -> "好奇"
+        "tired" -> "有点累"
+        "slightly_annoyed" -> "小委屈"
+        "neutral" -> ""
+        else -> emotion
+    }
+
+    // ========== Permissions ==========
 
     private fun checkPermissions() {
         val missing = requiredPermissions.filter {

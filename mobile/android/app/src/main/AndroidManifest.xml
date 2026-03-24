@@ -26,6 +26,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".EnrollActivity"
+            android:exported="false"
+            android:label="注册家庭成员" />
+
         <service
             android:name=".AudioCaptureService"
             android:foregroundServiceType="microphone"
