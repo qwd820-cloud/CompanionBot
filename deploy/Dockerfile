@@ -1,7 +1,12 @@
 # CompanionBot DGX Spark 部署 Dockerfile
-# 适配 DGX Spark (Grace Blackwell GB10, ARM aarch64, CUDA 12.8+)
+# 使用 NGC 预构建 PyTorch 镜像 — 已针对 ARM (Grace) + Blackwell GPU 优化
+#
+# 为什么用 NGC PyTorch 镜像而不是裸 CUDA 镜像:
+#   1. 预编译的 PyTorch/CUDA/cuDNN，省去 ARM 上的漫长编译
+#   2. 包含 TensorRT、NCCL 等已针对 Blackwell 优化的库
+#   3. NVIDIA 官方维护，与 DGX Spark 兼容性有保证
 
-FROM nvcr.io/nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
+FROM nvcr.io/nvidia/pytorch:24.12-py3
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -9,20 +14,20 @@ ENV CUDA_VISIBLE_DEVICES=all
 # Grace Blackwell GB10 的 compute capability
 ENV TORCH_CUDA_ARCH_LIST="10.0"
 
-# 系统依赖
+# 额外系统依赖 (NGC PyTorch 镜像已有 Python 3.11 + 常用库)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3.11-dev python3-pip \
     libsndfile1 ffmpeg libgl1-mesa-glx libglib2.0-0 \
-    git build-essential \
     && rm -rf /var/lib/apt/lists/*
-
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
 WORKDIR /app
 
-# Python 依赖
+# Python 依赖 (PyTorch/torchaudio 已在基础镜像中，跳过重装)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --no-deps \
+    fastapi uvicorn websockets \
+    speechbrain insightface onnxruntime-gpu \
+    chromadb silero-vad edge-tts funasr openai \
+    pyyaml numpy opencv-python pillow aiofiles python-multipart pydantic
 
 # 应用代码
 COPY config/ config/

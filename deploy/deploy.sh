@@ -3,9 +3,10 @@
 #
 # 使用方法:
 #   chmod +x deploy.sh
-#   ./deploy.sh              # 完整部署 (含 LLM)
-#   ./deploy.sh --no-llm     # 仅部署主服务 (使用云端 Kimi API)
+#   ./deploy.sh              # 完整部署 (含本地 LLM)
 #   ./deploy.sh --dev        # 开发模式 (不用 Docker)
+#   ./deploy.sh --stop       # 停止服务
+#   ./deploy.sh --logs       # 查看日志
 
 set -euo pipefail
 
@@ -30,6 +31,33 @@ check_gpu() {
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 }
 
+# DGX Spark UMA 优化: 刷新系统 buffer cache 释放可用内存给 GPU
+flush_buffer_cache() {
+    log "刷新系统 buffer cache (UMA 优化，释放更多内存给 GPU)..."
+    if [ "$(id -u)" -eq 0 ]; then
+        sync && echo 3 > /proc/sys/vm/drop_caches
+        log "Buffer cache 已刷新"
+    else
+        sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null && \
+            log "Buffer cache 已刷新" || \
+            warn "需要 sudo 权限刷新 buffer cache，跳过 (非必需，但建议)"
+    fi
+}
+
+# 检查 NVIDIA Container Toolkit
+check_container_toolkit() {
+    if ! docker info 2>/dev/null | grep -q -i nvidia; then
+        warn "Docker NVIDIA runtime 未检测到，尝试配置..."
+        if command -v nvidia-ctk &>/dev/null; then
+            sudo nvidia-ctk runtime configure --runtime=docker
+            sudo systemctl restart docker
+            log "NVIDIA Container Runtime 已配置"
+        else
+            error "未找到 nvidia-ctk，请安装 NVIDIA Container Toolkit"
+        fi
+    fi
+}
+
 # 开发模式: 直接运行
 dev_mode() {
     log "开发模式启动..."
@@ -52,26 +80,20 @@ dev_mode() {
 
 # Docker 部署
 docker_deploy() {
-    local no_llm=$1
-
     if ! command -v docker &>/dev/null; then
         error "Docker 未安装"
     fi
 
     check_gpu
+    check_container_toolkit
+
+    # UMA 优化: 部署前刷新 buffer cache
+    flush_buffer_cache
+
     cd "$PROJECT_DIR"
 
-    if [ "$no_llm" = true ]; then
-        log "部署主服务 (不含本地 LLM)..."
-        if [ -z "${KIMI_API_KEY:-}" ]; then
-            warn "未设置 KIMI_API_KEY，LLM 功能将不可用"
-            warn "设置方法: export KIMI_API_KEY=your-api-key"
-        fi
-        docker compose -f deploy/docker-compose.yml up -d companion-bot
-    else
-        log "完整部署 (含本地 Qwen3.5 LLM)..."
-        docker compose -f deploy/docker-compose.yml up -d
-    fi
+    log "完整部署 (含本地 Qwen3.5 LLM)..."
+    docker compose -f deploy/docker-compose.yml up -d
 
     log "等待服务启动..."
     for i in $(seq 1 30); do
@@ -92,9 +114,6 @@ case "${1:-}" in
     --dev)
         dev_mode
         ;;
-    --no-llm)
-        docker_deploy true
-        ;;
     --stop)
         log "停止服务..."
         cd "$PROJECT_DIR"
@@ -105,6 +124,6 @@ case "${1:-}" in
         docker logs -f companion-bot
         ;;
     *)
-        docker_deploy false
+        docker_deploy
         ;;
 esac

@@ -1,5 +1,11 @@
 # CompanionBot DGX Spark 部署 — Docker Compose
-# DGX Spark 只有 1 个 GPU (GB10)，两个服务共享
+# 适配 DGX Spark UMA (128GB 统一内存，CPU/GPU 共享)
+#
+# DGX Spark 特殊之处:
+#   1. UMA 架构 — GPU 没有独立显存，和 CPU 共享 128GB LPDDR5x
+#   2. 单 GPU (GB10) — 所有服务共享同一个 GPU
+#   3. ARM aarch64 — 必须使用 ARM 兼容镜像
+#   4. 内存带宽是瓶颈 (273 GB/s) — 需要最大化可用内存
 
 services:
   companion-bot:
@@ -15,6 +21,15 @@ services:
     environment:
       - LOCAL_LLM_URL=http://llm-engine:8000/v1
       - CUDA_VISIBLE_DEVICES=0
+    # --- DGX Spark UMA 关键配置 ---
+    ipc: host                        # 共享宿主机共享内存，PyTorch/NCCL 需要
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1                     # 解除内存锁定限制，避免大模型加载失败
+      stack:
+        soft: 67108864
+        hard: 67108864               # 64MB 栈空间
     deploy:
       resources:
         reservations:
@@ -41,6 +56,19 @@ services:
       --trust-remote-code
     volumes:
       - llm-models:/root/.cache
+      # 复用宿主机 HuggingFace 缓存，避免重复下载模型
+      - ${HF_HOME:-~/.cache/huggingface}:/root/.cache/huggingface
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    # --- DGX Spark UMA 关键配置 ---
+    ipc: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      stack:
+        soft: 67108864
+        hard: 67108864
     deploy:
       resources:
         reservations:
