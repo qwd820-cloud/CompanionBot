@@ -1,10 +1,14 @@
 """人脸识别模块 — InsightFace buffalo_l"""
 
-import io
 import logging
-from pathlib import Path
 
 import numpy as np
+
+from server.utils.audio import (
+    cosine_similarity,
+    mean_normalize_embeddings,
+    normalize_embedding,
+)
 
 logger = logging.getLogger("companion_bot.face_id")
 
@@ -59,7 +63,7 @@ class FaceIdentifier:
         best_score = 0.0
 
         for person_id, ref_emb in self.enrolled.items():
-            score = self._cosine_similarity(embedding, ref_emb)
+            score = cosine_similarity(embedding, ref_emb)
             if score > best_score:
                 best_score = score
                 best_id = person_id
@@ -104,9 +108,7 @@ class FaceIdentifier:
             logger.error(f"人脸注册失败: {person_id}, 无有效 embedding")
             return
 
-        mean_embedding = np.mean(embeddings, axis=0)
-        mean_embedding = mean_embedding / np.linalg.norm(mean_embedding)
-        self.enrolled[person_id] = mean_embedding
+        self.enrolled[person_id] = mean_normalize_embeddings(embeddings)
         logger.info(
             f"人脸注册成功: {person_id}, {len(embeddings)} 张照片"
         )
@@ -131,8 +133,7 @@ class FaceIdentifier:
     def _get_embedding(self, face) -> np.ndarray | None:
         """获取人脸 embedding"""
         if hasattr(face, "embedding") and face.embedding is not None:
-            emb = face.embedding
-            return emb / np.linalg.norm(emb)
+            return normalize_embedding(face.embedding)
         return None
 
     def _face_area(self, face) -> float:
@@ -148,9 +149,6 @@ class FaceIdentifier:
             return [float(x) for x in face.bbox]
         return []
 
-    def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
-        norm_a = np.linalg.norm(a)
-        norm_b = np.linalg.norm(b)
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return float(np.dot(a, b) / (norm_a * norm_b))
+    @staticmethod
+    def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+        return cosine_similarity(a, b)

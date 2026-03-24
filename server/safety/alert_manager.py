@@ -1,6 +1,7 @@
 """预警管理 — 处理异常事件 + 通道降级"""
 
 import logging
+from collections import deque
 
 from server.safety.anomaly_detector import Anomaly
 from server.output.notification import NotificationManager, Priority
@@ -19,7 +20,7 @@ class AlertManager:
 
     def __init__(self, notification: NotificationManager):
         self.notification = notification
-        self._alert_history: list[dict] = []
+        self._alert_history: deque[dict] = deque(maxlen=1000)
 
     async def handle_anomaly(
         self, anomaly: Anomaly, client_id: str, connection_manager
@@ -77,4 +78,4 @@ class AlertManager:
 
     def get_recent_alerts(self, limit: int = 20) -> list[dict]:
         """获取最近的预警记录"""
-        return self._alert_history[-limit:]
+        return list(self._alert_history)[-limit:]

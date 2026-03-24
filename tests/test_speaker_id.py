@@ -47,11 +47,13 @@ def test_unknown_speaker(speaker_id):
     assert result["person_id"] == "unknown" or result["score"] == 0.0
 
 
-def test_cosine_similarity(speaker_id):
+def test_cosine_similarity():
     """测试余弦相似度计算"""
+    from server.utils.audio import cosine_similarity
+
     a = np.array([1.0, 0.0, 0.0])
     b = np.array([1.0, 0.0, 0.0])
-    assert speaker_id._cosine_similarity(a, b) == pytest.approx(1.0)
+    assert cosine_similarity(a, b) == pytest.approx(1.0)
 
     c = np.array([0.0, 1.0, 0.0])
-    assert speaker_id._cosine_similarity(a, c) == pytest.approx(0.0)
+    assert cosine_similarity(a, c) == pytest.approx(0.0)

@@ -1,5 +1,6 @@
 """CompanionBot — FastAPI 入口"""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -98,12 +99,14 @@ async def lifespan(app: FastAPI):
         notification=app.state.notification
     )
 
-    await app.state.vad.initialize()
-    await app.state.speaker_id.initialize()
-    await app.state.face_id.initialize()
-    await app.state.asr.initialize()
-    await app.state.episodic_memory.initialize()
-    await app.state.long_term_profile.initialize()
+    await asyncio.gather(
+        app.state.vad.initialize(),
+        app.state.speaker_id.initialize(),
+        app.state.face_id.initialize(),
+        app.state.asr.initialize(),
+        app.state.episodic_memory.initialize(),
+        app.state.long_term_profile.initialize(),
+    )
 
     logger.info("CompanionBot 所有子系统初始化完成")
     yield

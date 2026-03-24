@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from server.utils.audio import decode_pcm_to_float32
+
 logger = logging.getLogger("companion_bot.vad")
 
 # VAD 配置
@@ -13,6 +15,7 @@ MIN_SPEECH_DURATION_MS = 250
 MIN_SILENCE_DURATION_MS = 100
 SAMPLE_RATE = 16000
 WINDOW_SIZE = 512  # Silero VAD 要求的窗口大小 (16kHz 下 32ms)
+MAX_BUFFER_SAMPLES = SAMPLE_RATE * 30  # 最大缓冲 30 秒，防止内存无限增长
 
 
 @dataclass
@@ -64,10 +67,10 @@ class VADProcessor:
         输入: 16kHz 单声道 16-bit PCM 字节流
         输出: 语音段列表
         """
-        # PCM bytes → float32 numpy array
-        pcm = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32)
-        pcm = pcm / 32768.0
+        pcm = decode_pcm_to_float32(audio_bytes)
         self._buffer = np.concatenate([self._buffer, pcm])
+        if len(self._buffer) > MAX_BUFFER_SAMPLES:
+            self._buffer = self._buffer[-MAX_BUFFER_SAMPLES:]
 
         segments: list[SpeechSegment] = []
 

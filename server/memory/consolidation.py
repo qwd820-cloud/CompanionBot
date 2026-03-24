@@ -5,6 +5,13 @@ import logging
 from server.memory.episodic_memory import EpisodicMemory
 from server.memory.semantic_memory import SemanticMemory
 from server.memory.long_term_profile import LongTermProfile
+from server.utils.keywords import (
+    BOT_NAME,
+    HEALTH_KEYWORDS,
+    NEGATIVE_EMOTION_KEYWORDS,
+    POSITIVE_EMOTION_KEYWORDS,
+    match_any_keyword,
+)
 
 logger = logging.getLogger("companion_bot.consolidation")
 
@@ -101,40 +108,18 @@ class MemoryConsolidation:
         分析对话，返回 (摘要, 重要性评分, 情绪标签)。
         实际使用时调用 LLM，此处为基于规则的回退。
         """
-        # 基于关键词的重要性评估
-        importance = 0.3  # 默认
+        importance = 0.3
         emotion = "neutral"
 
-        health_keywords = [
-            "疼", "痛", "不舒服", "头晕", "血压", "吃药", "医院",
-            "检查", "发烧", "咳嗽",
-        ]
-        emotion_keywords_negative = [
-            "难过", "伤心", "孤独", "无聊", "想", "念", "担心",
-        ]
-        emotion_keywords_positive = [
-            "开心", "高兴", "好消息", "太好了", "哈哈",
-        ]
-
-        text_lower = text.lower()
-
-        for kw in health_keywords:
-            if kw in text_lower:
-                importance = max(importance, 0.8)
-                emotion = "concerned"
-                break
-
-        for kw in emotion_keywords_negative:
-            if kw in text_lower:
-                importance = max(importance, 0.6)
-                emotion = "concerned"
-                break
-
-        for kw in emotion_keywords_positive:
-            if kw in text_lower:
-                importance = max(importance, 0.4)
-                emotion = "happy"
-                break
+        if match_any_keyword(text, HEALTH_KEYWORDS):
+            importance = max(importance, 0.8)
+            emotion = "concerned"
+        elif match_any_keyword(text, NEGATIVE_EMOTION_KEYWORDS):
+            importance = max(importance, 0.6)
+            emotion = "concerned"
+        elif match_any_keyword(text, POSITIVE_EMOTION_KEYWORDS):
+            importance = max(importance, 0.4)
+            emotion = "happy"
 
         # 简单摘要 (取前200字)
         summary = text[:200].replace("\n", " ")
@@ -190,6 +175,6 @@ class MemoryConsolidation:
         for t in turns:
             speaker = t.get("person_id", "unknown")
             if t.get("role") == "assistant":
-                speaker = "小伴"
+                speaker = BOT_NAME
             lines.append(f"{speaker}: {t['text']}")
         return "\n".join(lines)

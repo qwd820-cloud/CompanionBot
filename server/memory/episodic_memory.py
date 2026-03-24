@@ -80,18 +80,7 @@ class EpisodicMemory:
                ORDER BY timestamp DESC LIMIT ?""",
             (person_id, limit),
         )
-        rows = cursor.fetchall()
-        return [
-            Episode(
-                event_id=row["event_id"],
-                person_id=row["person_id"],
-                timestamp=row["timestamp"],
-                summary=row["summary"],
-                emotion_tag=row["emotion_tag"],
-                importance_score=row["importance_score"],
-            )
-            for row in rows
-        ]
+        return [self._row_to_episode(row) for row in cursor.fetchall()]
 
     async def search(
         self, person_id: str, keyword: str, limit: int = 10
@@ -103,18 +92,7 @@ class EpisodicMemory:
                ORDER BY timestamp DESC LIMIT ?""",
             (person_id, f"%{keyword}%", limit),
         )
-        rows = cursor.fetchall()
-        return [
-            Episode(
-                event_id=row["event_id"],
-                person_id=row["person_id"],
-                timestamp=row["timestamp"],
-                summary=row["summary"],
-                emotion_tag=row["emotion_tag"],
-                importance_score=row["importance_score"],
-            )
-            for row in rows
-        ]
+        return [self._row_to_episode(row) for row in cursor.fetchall()]
 
     async def get_important(
         self, person_id: str, min_score: float = 0.6, limit: int = 10
@@ -126,15 +104,15 @@ class EpisodicMemory:
                ORDER BY importance_score DESC, timestamp DESC LIMIT ?""",
             (person_id, min_score, limit),
         )
-        rows = cursor.fetchall()
-        return [
-            Episode(
-                event_id=row["event_id"],
-                person_id=row["person_id"],
-                timestamp=row["timestamp"],
-                summary=row["summary"],
-                emotion_tag=row["emotion_tag"],
-                importance_score=row["importance_score"],
-            )
-            for row in rows
-        ]
+        return [self._row_to_episode(row) for row in cursor.fetchall()]
+
+    @staticmethod
+    def _row_to_episode(row: sqlite3.Row) -> Episode:
+        return Episode(
+            event_id=row["event_id"],
+            person_id=row["person_id"],
+            timestamp=row["timestamp"],
+            summary=row["summary"],
+            emotion_tag=row["emotion_tag"],
+            importance_score=row["importance_score"],
+        )

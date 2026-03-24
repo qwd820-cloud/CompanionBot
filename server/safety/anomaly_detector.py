@@ -5,7 +5,16 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 
+from server.utils.keywords import (
+    DISTRESS_KEYWORDS,
+    EMOTIONAL_DISTRESS_KEYWORDS,
+    HEALTH_URGENT_KEYWORDS,
+    match_any_keyword,
+)
+
 logger = logging.getLogger("companion_bot.anomaly")
+
+DISTRESS_COOLDOWN_SECONDS = 60
 
 
 class AnomalyType(str, Enum):
@@ -41,52 +50,39 @@ class AnomalyDetector:
         # 更新活动时间
         self._last_activity[person_id] = time.time()
 
-        # 呼救检测 (P0)
-        distress_keywords = [
-            "救命", "帮帮我", "快来人", "摔倒了", "不行了",
-        ]
-        for kw in distress_keywords:
-            if kw in text:
-                # 冷却期检查 (避免误报重复触发)
-                cooldown = self._distress_cooldown.get(person_id, 0)
-                if time.time() - cooldown < 60:  # 1 分钟内不重复触发
-                    return None
-                self._distress_cooldown[person_id] = time.time()
-                return Anomaly(
-                    type=AnomalyType.DISTRESS_CALL,
-                    severity="P0",
-                    person_id=person_id,
-                    description=f"检测到呼救: '{text}'",
-                    timestamp=time.time(),
-                )
+        kw = match_any_keyword(text, DISTRESS_KEYWORDS)
+        if kw:
+            cooldown = self._distress_cooldown.get(person_id, 0)
+            if time.time() - cooldown < DISTRESS_COOLDOWN_SECONDS:
+                return None
+            self._distress_cooldown[person_id] = time.time()
+            return Anomaly(
+                type=AnomalyType.DISTRESS_CALL,
+                severity="P0",
+                person_id=person_id,
+                description=f"检测到呼救: '{text}'",
+                timestamp=time.time(),
+            )
 
-        # 健康异常 (P1)
-        health_urgents = [
-            "胸闷", "喘不上气", "很晕", "眼前发黑", "心脏",
-        ]
-        for kw in health_urgents:
-            if kw in text:
-                return Anomaly(
-                    type=AnomalyType.HEALTH_CONCERN,
-                    severity="P1",
-                    person_id=person_id,
-                    description=f"检测到健康异常: '{text}'",
-                    timestamp=time.time(),
-                )
+        kw = match_any_keyword(text, HEALTH_URGENT_KEYWORDS)
+        if kw:
+            return Anomaly(
+                type=AnomalyType.HEALTH_CONCERN,
+                severity="P1",
+                person_id=person_id,
+                description=f"检测到健康异常: '{text}'",
+                timestamp=time.time(),
+            )
 
-        # 情绪异常 (P1) — 持续负面情绪
-        emotional_keywords = [
-            "不想活", "活着没意思", "太痛苦了",
-        ]
-        for kw in emotional_keywords:
-            if kw in text:
-                return Anomaly(
-                    type=AnomalyType.EMOTIONAL_DISTRESS,
-                    severity="P1",
-                    person_id=person_id,
-                    description=f"检测到严重情绪异常: '{text}'",
-                    timestamp=time.time(),
-                )
+        kw = match_any_keyword(text, EMOTIONAL_DISTRESS_KEYWORDS)
+        if kw:
+            return Anomaly(
+                type=AnomalyType.EMOTIONAL_DISTRESS,
+                severity="P1",
+                person_id=person_id,
+                description=f"检测到严重情绪异常: '{text}'",
+                timestamp=time.time(),
+            )
 
         return None
 

@@ -3,6 +3,14 @@
 import logging
 import time
 
+from server.utils.keywords import (
+    BOT_NAME,
+    DISTRESS_KEYWORDS,
+    HEALTH_KEYWORDS,
+    HEALTH_URGENT_KEYWORDS,
+    match_any_keyword,
+)
+
 logger = logging.getLogger("companion_bot.intervention")
 
 INTERVENTION_THRESHOLD = 0.6
@@ -77,31 +85,21 @@ class InterventionDecider:
         self._last_ignored_time = time.time()
 
     def _check_safety_trigger(self, text: str) -> tuple[bool, str]:
-        """检查安全预警触发 (绕过所有评分)"""
-        safety_keywords = [
-            "救命", "帮帮我", "摔倒了", "很痛", "胸闷", "喘不上气",
-            "头很晕", "不行了", "快来",
-        ]
-        for kw in safety_keywords:
-            if kw in text:
-                return True, f"安全预警: 检测到'{kw}'"
+        """检查安全预警触发 — 绕过所有评分，因为生命安全优先"""
+        kw = match_any_keyword(text, DISTRESS_KEYWORDS + HEALTH_URGENT_KEYWORDS)
+        if kw:
+            return True, f"安全预警: 检测到'{kw}'"
         return False, ""
 
     def _relevance_score(self, text: str, context: dict) -> float:
         """评估对话内容与机器人的相关度"""
         score = 0.0
 
-        # 提到机器人名字
-        if "小伴" in text:
+        if BOT_NAME in text:
             return 1.0
 
-        # 健康相关话题
-        health_keywords = [
-            "血压", "吃药", "不舒服", "医院", "检查",
-        ]
-        for kw in health_keywords:
-            if kw in text:
-                score = max(score, 0.7)
+        if match_any_keyword(text, HEALTH_KEYWORDS):
+            score = max(score, 0.7)
 
         # 问句 (可能需要帮助)
         if "?" in text or "？" in text or "吗" in text:
@@ -127,15 +125,15 @@ class InterventionDecider:
 
     def _role_score(self, text: str) -> float:
         """评估机器人插话的角色价值"""
-        # 安全相关
+        if BOT_NAME in text:
+            return 1.0
+
         if any(kw in text for kw in ["摔", "痛", "救"]):
             return 1.0
 
-        # 可以提供有用信息
         if any(kw in text for kw in ["天气", "几点", "提醒"]):
             return 0.8
 
-        # 表达关心
         if any(kw in text for kw in ["不舒服", "难过", "累"]):
             return 0.5
 

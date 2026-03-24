@@ -4,11 +4,11 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from server.utils.keywords import WAKE_WORDS
+
 logger = logging.getLogger("companion_bot.working_memory")
 
 MAX_TURNS = 20
-BOT_NAME = "小伴"
-WAKE_WORDS = ["小伴", "xiaoban", "机器人"]
 
 
 @dataclass
@@ -52,15 +52,7 @@ class WorkingMemory:
             "session_id": session.session_id,
             "start_time": session.start_time,
             "end_time": time.time(),
-            "turns": [
-                {
-                    "person_id": t.person_id,
-                    "text": t.text,
-                    "role": t.role,
-                    "timestamp": t.timestamp,
-                }
-                for t in session.turns
-            ],
+            "turns": [self._turn_to_dict(t) for t in session.turns],
             "person_ids": list(session.active_person_ids),
         }
 
@@ -91,15 +83,7 @@ class WorkingMemory:
 
         return {
             "session_id": session.session_id,
-            "turns": [
-                {
-                    "person_id": t.person_id,
-                    "text": t.text,
-                    "role": t.role,
-                    "timestamp": t.timestamp,
-                }
-                for t in session.turns
-            ],
+            "turns": [self._turn_to_dict(t) for t in session.turns],
             "person_ids": list(session.active_person_ids),
             "latest_face": session.latest_face,
         }
@@ -138,6 +122,15 @@ class WorkingMemory:
             return True
 
         return False
+
+    @staticmethod
+    def _turn_to_dict(t: "Turn") -> dict:
+        return {
+            "person_id": t.person_id,
+            "text": t.text,
+            "role": t.role,
+            "timestamp": t.timestamp,
+        }
 
     def get_recent_text(self, session_id: str, n: int = 5) -> str:
         """获取最近 n 轮的文本，用于插话决策"""

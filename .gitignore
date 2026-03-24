@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+*.egg
+
+# Data
+server/data/companion.db
+server/data/chroma/
+server/data/voiceprints/*.npy
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Android
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/local.properties
+
+# Environment
+.env
+deploy/.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# pytest
+.pytest_cache/

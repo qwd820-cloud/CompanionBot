@@ -135,13 +135,13 @@ async def _process_audio(app, client_id: str, audio_data: bytes):
         return
 
     for segment in speech_segments:
-        # 声纹识别
-        speaker_result = await app.state.speaker_id.identify(segment)
+        # 声纹识别和 ASR 转写并行执行
+        speaker_result, asr_result = await asyncio.gather(
+            app.state.speaker_id.identify(segment),
+            app.state.asr.transcribe(segment),
+        )
         person_id = speaker_result.get("person_id", "unknown")
         voice_score = speaker_result.get("score", 0.0)
-
-        # ASR 转写
-        asr_result = await app.state.asr.transcribe(segment)
         text = asr_result.get("text", "")
         if not text.strip():
             continue

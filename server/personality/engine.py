@@ -3,6 +3,13 @@
 import logging
 import time
 
+from server.utils.keywords import (
+    CURIOUS_KEYWORDS,
+    HEALTH_KEYWORDS,
+    POSITIVE_EMOTION_KEYWORDS,
+    match_any_keyword,
+)
+
 logger = logging.getLogger("companion_bot.personality")
 
 VALID_EMOTIONS = {
@@ -70,31 +77,15 @@ class PersonalityEngine:
 
     def _infer_emotion(self, text: str) -> str:
         """从用户文本推断应有的情绪反应"""
-        # 关心/担忧触发
-        health_keywords = [
-            "疼", "痛", "不舒服", "头晕", "难受", "生病", "住院",
-        ]
-        for kw in health_keywords:
-            if kw in text:
-                return "concerned"
+        if match_any_keyword(text, HEALTH_KEYWORDS):
+            return "concerned"
+        if match_any_keyword(text, POSITIVE_EMOTION_KEYWORDS):
+            return "happy"
+        if match_any_keyword(text, CURIOUS_KEYWORDS):
+            return "curious"
 
-        # 开心触发
-        happy_keywords = [
-            "开心", "高兴", "太好了", "好消息", "哈哈", "生日",
-        ]
-        for kw in happy_keywords:
-            if kw in text:
-                return "happy"
-
-        # 好奇触发
-        curious_keywords = ["你知道吗", "有意思", "听说", "真的吗"]
-        for kw in curious_keywords:
-            if kw in text:
-                return "curious"
-
-        # 长时间无互动后被唤醒
         idle_seconds = time.time() - self._last_interaction_time
-        if idle_seconds > 3600:  # 1 小时
+        if idle_seconds > 3600:
             return "tired"
 
         return self.current_emotion

@@ -1,0 +1,61 @@
+# CompanionBot DGX Spark 部署 — Docker Compose
+# 包含主服务 + 本地 LLM 推理引擎
+
+services:
+  companion-bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: companion-bot
+    ports:
+      - "8765:8765"
+    volumes:
+      - companion-data:/app/server/data
+      - ../config:/app/config:ro
+    environment:
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - LOCAL_LLM_URL=http://llm-engine:8000/v1
+      - CUDA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - llm-engine
+    restart: unless-stopped
+    networks:
+      - companion-net
+
+  llm-engine:
+    image: lmsysorg/sglang:latest
+    container_name: companion-llm
+    command: >
+      python -m sglang.launch_server
+      --model-path Qwen/Qwen3.5-27B
+      --port 8000
+      --host 0.0.0.0
+      --tp 1
+      --trust-remote-code
+    volumes:
+      - llm-models:/root/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - companion-net
+
+volumes:
+  companion-data:
+  llm-models:
+
+networks:
+  companion-net:
+    driver: bridge

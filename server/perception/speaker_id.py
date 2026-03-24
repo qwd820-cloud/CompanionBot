@@ -1,10 +1,16 @@
 """声纹识别模块 — SpeechBrain ECAPA-TDNN"""
 
-import json
 import logging
 from pathlib import Path
 
 import numpy as np
+
+from server.utils.audio import (
+    cosine_similarity,
+    decode_pcm_to_float32,
+    mean_normalize_embeddings,
+    normalize_embedding,
+)
 
 logger = logging.getLogger("companion_bot.speaker_id")
 
@@ -68,7 +74,7 @@ class SpeakerIdentifier:
         best_score = 0.0
 
         for person_id, ref_emb in self.enrolled.items():
-            score = self._cosine_similarity(embedding, ref_emb)
+            score = cosine_similarity(embedding, ref_emb)
             if score > best_score:
                 best_score = score
                 best_id = person_id
@@ -89,10 +95,7 @@ class SpeakerIdentifier:
         输入: person_id, 3~5 段语音音频
         """
         if isinstance(audio_samples, bytes):
-            pcm = np.frombuffer(audio_samples, dtype=np.int16).astype(
-                np.float32
-            ) / 32768.0
-            audio_samples = [pcm]
+            audio_samples = [decode_pcm_to_float32(audio_samples)]
 
         embeddings = []
         for audio in audio_samples:
@@ -104,12 +107,10 @@ class SpeakerIdentifier:
             logger.error(f"声纹注册失败: {person_id}, 无有效 embedding")
             return
 
-        mean_embedding = np.mean(embeddings, axis=0)
-        mean_embedding = mean_embedding / np.linalg.norm(mean_embedding)
-
-        self.enrolled[person_id] = mean_embedding
+        enrolled_emb = mean_normalize_embeddings(embeddings)
+        self.enrolled[person_id] = enrolled_emb
         save_path = self.voiceprint_dir / f"{person_id}.npy"
-        np.save(str(save_path), mean_embedding)
+        np.save(str(save_path), enrolled_emb)
         logger.info(
             f"声纹注册成功: {person_id}, {len(embeddings)} 段样本"
         )
@@ -136,21 +137,10 @@ class SpeakerIdentifier:
             int(np.abs(audio[:100].sum()) * 1000) % (2**31)
         )
         emb = rng.randn(EMBEDDING_DIM).astype(np.float32)
-        return emb / np.linalg.norm(emb)
-
-    def _cosine_similarity(
-        self, a: np.ndarray, b: np.ndarray
-    ) -> float:
-        """计算余弦相似度"""
-        norm_a = np.linalg.norm(a)
-        norm_b = np.linalg.norm(b)
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return float(np.dot(a, b) / (norm_a * norm_b))
+        return normalize_embedding(emb)
 
     def _update_template(self, person_id: str, new_embedding: np.ndarray):
-        """高置信度时在线更新声纹模板"""
+        """高置信度时在线更新声纹模板 — 指数移动平均保持声纹模板与时俱进"""
         old = self.enrolled[person_id]
         updated = (1 - UPDATE_ALPHA) * old + UPDATE_ALPHA * new_embedding
-        updated = updated / np.linalg.norm(updated)
-        self.enrolled[person_id] = updated
+        self.enrolled[person_id] = normalize_embedding(updated)
