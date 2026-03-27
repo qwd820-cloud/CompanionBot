@@ -41,7 +41,7 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
     private lateinit var wsClient: WebSocketClient
     private lateinit var audioPlayer: AudioPlayer
     private lateinit var smsNotifier: SmsNotifier
-    private var cameraManager: CameraManager? = null
+    private var cameraManager: CameraFrameCapture? = null
 
     // AudioCaptureService 绑定
     private var audioService: AudioCaptureService? = null
@@ -161,7 +161,7 @@ class MainActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
         bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         // 启动摄像头
-        cameraManager = CameraManager(this).apply {
+        cameraManager = CameraFrameCapture(this).apply {
             onFrameCapture = { jpegData ->
                 wsClient.sendVideoFrame(jpegData)
             }

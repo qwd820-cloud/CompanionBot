@@ -18,7 +18,7 @@ import java.io.ByteArrayOutputStream
  * 使用 Camera2 API 获取低延迟视频帧。
  * 默认 2fps 以平衡带宽和识别效果。
  */
-class CameraManager(private val context: Context) {
+class CameraFrameCapture(private val context: Context) {
     companion object {
         private const val TAG = "CompanionBot.Camera"
         private const val TARGET_FPS = 2

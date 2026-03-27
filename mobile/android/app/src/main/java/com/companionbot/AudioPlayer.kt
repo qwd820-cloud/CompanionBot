@@ -3,7 +3,7 @@ package com.companionbot
 import android.media.*
 import android.util.Log
 import kotlinx.coroutines.*
-import java.io.ByteArrayInputStream
+import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
@@ -35,7 +35,7 @@ class AudioPlayer {
         isPlaying = true
         scope.launch {
             try {
-                val tempFile = kotlin.io.path.createTempFile("tts_", ".mp3").toFile()
+                val tempFile = File.createTempFile("tts_", ".mp3")
                 tempFile.writeBytes(data)
 
                 withContext(Dispatchers.Main) {
