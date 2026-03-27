@@ -14,6 +14,7 @@ MAX_TURNS = 20
 @dataclass
 class Turn:
     """对话轮次"""
+
     person_id: str
     text: str
     role: str  # "user" 或 "assistant"
@@ -23,6 +24,7 @@ class Turn:
 @dataclass
 class Session:
     """对话会话"""
+
     session_id: str
     turns: list[Turn] = field(default_factory=list)
     start_time: float = field(default_factory=time.time)
@@ -57,24 +59,20 @@ class WorkingMemory:
             "person_ids": list(session.active_person_ids),
         }
 
-    def add_turn(
-        self, session_id: str, person_id: str, text: str, role: str
-    ):
+    def add_turn(self, session_id: str, person_id: str, text: str, role: str):
         """添加一轮对话"""
         session = self.sessions.get(session_id)
         if session is None:
             self.start_session(session_id)
             session = self.sessions[session_id]
 
-        turn = Turn(
-            person_id=person_id, text=text, role=role
-        )
+        turn = Turn(person_id=person_id, text=text, role=role)
         session.turns.append(turn)
         session.active_person_ids.add(person_id)
 
         # 保留最近 max_turns 轮
         if len(session.turns) > self.max_turns:
-            session.turns = session.turns[-self.max_turns:]
+            session.turns = session.turns[-self.max_turns :]
 
     def get_context(self, session_id: str) -> dict:
         """获取当前会话的上下文信息"""
@@ -89,9 +87,7 @@ class WorkingMemory:
             "latest_face": session.latest_face,
         }
 
-    def get_latest_face(
-        self, session_id: str, max_age_sec: float = 5.0
-    ) -> dict | None:
+    def get_latest_face(self, session_id: str, max_age_sec: float = 5.0) -> dict | None:
         """
         获取最近的人脸识别结果。
         max_age_sec: 结果的最大有效期 (秒)，超时则视为过期不参与融合。
@@ -127,10 +123,7 @@ class WorkingMemory:
                 return True
 
         # 如果只有一个人在说话 (没有其他人), 默认对机器人说话
-        if session and len(session.active_person_ids) <= 1:
-            return True
-
-        return False
+        return bool(session and len(session.active_person_ids) <= 1)
 
     @staticmethod
     def _turn_to_dict(t: "Turn") -> dict:

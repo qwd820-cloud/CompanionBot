@@ -13,7 +13,12 @@ from server.utils.keywords import (
 logger = logging.getLogger("companion_bot.personality")
 
 VALID_EMOTIONS = {
-    "neutral", "happy", "concerned", "tired", "curious", "slightly_annoyed"
+    "neutral",
+    "happy",
+    "concerned",
+    "tired",
+    "curious",
+    "slightly_annoyed",
 }
 
 # 情绪自动恢复到 neutral 的轮次数
@@ -54,9 +59,7 @@ class PersonalityEngine:
         new_emotion = self._infer_emotion(text)
 
         if new_emotion != self.current_emotion:
-            logger.info(
-                f"情绪变化: {self.current_emotion} → {new_emotion}"
-            )
+            logger.info(f"情绪变化: {self.current_emotion} → {new_emotion}")
             self.current_emotion = new_emotion
             self._emotion_turns = 0
         else:
@@ -67,9 +70,7 @@ class PersonalityEngine:
             self.current_emotion != "neutral"
             and self._emotion_turns >= EMOTION_DECAY_TURNS
         ):
-            logger.info(
-                f"情绪恢复: {self.current_emotion} → neutral"
-            )
+            logger.info(f"情绪恢复: {self.current_emotion} → neutral")
             self.current_emotion = "neutral"
             self._emotion_turns = 0
 

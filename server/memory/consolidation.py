@@ -4,8 +4,8 @@ import json
 import logging
 
 from server.memory.episodic_memory import EpisodicMemory
-from server.memory.semantic_memory import SemanticMemory
 from server.memory.long_term_profile import LongTermProfile
+from server.memory.semantic_memory import SemanticMemory
 from server.utils.keywords import (
     BOT_NAME,
     HEALTH_KEYWORDS,
@@ -27,6 +27,7 @@ def _ensure_str_list(val) -> list[str]:
     if isinstance(val, str) and val:
         return [val]
     return []
+
 
 # LLM 对话分析 prompt
 ANALYSIS_PROMPT = """\
@@ -89,7 +90,8 @@ class MemoryConsolidation:
 
             # 提取该人相关的对话
             person_turns = [
-                t for t in turns
+                t
+                for t in turns
                 if t["person_id"] == person_id or t["role"] == "assistant"
             ]
             if not person_turns:
@@ -131,9 +133,7 @@ class MemoryConsolidation:
             f"涉及 {len(person_ids)} 人"
         )
 
-    async def _analyze_conversation(
-        self, person_id: str, text: str
-    ) -> dict:
+    async def _analyze_conversation(self, person_id: str, text: str) -> dict:
         """
         分析对话，返回结构化结果。
         优先使用 LLM，LLM 不可用时回退到规则。
@@ -146,13 +146,9 @@ class MemoryConsolidation:
         # LLM 不可用或调用失败，规则回退
         return self._analyze_with_rules(person_id, text)
 
-    async def _analyze_with_llm(
-        self, person_id: str, text: str
-    ) -> dict | None:
+    async def _analyze_with_llm(self, person_id: str, text: str) -> dict | None:
         """通过 LLM 分析对话"""
-        prompt = ANALYSIS_PROMPT.format(
-            conversation=text, person_id=person_id
-        )
+        prompt = ANALYSIS_PROMPT.format(conversation=text, person_id=person_id)
         try:
             result = await self.llm_client.chat(
                 messages=[{"role": "user", "content": prompt}],
@@ -257,7 +253,8 @@ class MemoryConsolidation:
                 return
 
             new_interests = [
-                i for i in analysis.get("new_interests", [])
+                i
+                for i in analysis.get("new_interests", [])
                 if i and i not in profile.get("interests", [])
             ]
             if new_interests:
@@ -265,7 +262,8 @@ class MemoryConsolidation:
                 logger.info(f"档案更新兴趣: {person_id} += {new_interests}")
 
             new_health = [
-                h for h in analysis.get("new_health", [])
+                h
+                for h in analysis.get("new_health", [])
                 if h and h not in profile.get("health_conditions", [])
             ]
             if new_health:
@@ -282,11 +280,18 @@ class MemoryConsolidation:
     def _detect_interests_by_rules(self, text: str) -> list[str]:
         """规则检测兴趣"""
         patterns = {
-            "下棋": "下棋", "象棋": "下棋", "围棋": "围棋",
-            "种花": "种花", "养花": "种花",
-            "钓鱼": "钓鱼", "跳舞": "跳舞", "唱歌": "唱歌",
-            "听戏": "听戏曲", "戏曲": "听戏曲",
-            "太极": "太极拳", "散步": "散步",
+            "下棋": "下棋",
+            "象棋": "下棋",
+            "围棋": "围棋",
+            "种花": "种花",
+            "养花": "种花",
+            "钓鱼": "钓鱼",
+            "跳舞": "跳舞",
+            "唱歌": "唱歌",
+            "听戏": "听戏曲",
+            "戏曲": "听戏曲",
+            "太极": "太极拳",
+            "散步": "散步",
         }
         found = set()
         for keyword, interest in patterns.items():
@@ -297,9 +302,12 @@ class MemoryConsolidation:
     def _detect_health_by_rules(self, text: str) -> list[str]:
         """规则检测健康信息"""
         patterns = {
-            "高血压": "高血压", "糖尿病": "糖尿病",
-            "膝盖": "膝盖不好", "腰疼": "腰疼",
-            "失眠": "失眠", "血糖": "血糖问题",
+            "高血压": "高血压",
+            "糖尿病": "糖尿病",
+            "膝盖": "膝盖不好",
+            "腰疼": "腰疼",
+            "失眠": "失眠",
+            "血糖": "血糖问题",
         }
         found = set()
         for keyword, condition in patterns.items():

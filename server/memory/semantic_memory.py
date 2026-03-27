@@ -11,8 +11,9 @@ TOP_K = 5
 class SemanticMemory:
     """语义记忆管理器 — ChromaDB 向量存储与 RAG 检索"""
 
-    def __init__(self, persist_dir: str):
+    def __init__(self, persist_dir: str, embedding_function=None):
         self.persist_dir = persist_dir
+        self._embedding_function = embedding_function
         self.client = None
         self.collection = None
 
@@ -27,18 +28,20 @@ class SemanticMemory:
 
         try:
             import chromadb
+
             self.client = chromadb.PersistentClient(path=self.persist_dir)
-            self.collection = self.client.get_or_create_collection(
+            kwargs = dict(
                 name="conversation_memory",
                 metadata={"hnsw:space": "cosine"},
             )
+            if self._embedding_function is not None:
+                kwargs["embedding_function"] = self._embedding_function
+            self.collection = self.client.get_or_create_collection(**kwargs)
             logger.info("ChromaDB 语义记忆初始化完成")
         except Exception as e:
             logger.warning(f"ChromaDB 初始化失败: {e}")
 
-    async def add(
-        self, person_id: str, text: str, metadata: dict | None = None
-    ):
+    async def add(self, person_id: str, text: str, metadata: dict | None = None):
         """
         存储对话摘要到向量数据库。
         ChromaDB 内置 embedding 函数，自动向量化。
@@ -87,15 +90,25 @@ class SemanticMemory:
             memories = []
             if results and results["documents"]:
                 docs = results["documents"][0]
-                metas = results["metadatas"][0] if results["metadatas"] else [{}] * len(docs)
-                distances = results["distances"][0] if results["distances"] else [0.0] * len(docs)
+                metas = (
+                    results["metadatas"][0]
+                    if results["metadatas"]
+                    else [{}] * len(docs)
+                )
+                distances = (
+                    results["distances"][0]
+                    if results["distances"]
+                    else [0.0] * len(docs)
+                )
 
-                for doc, meta, dist in zip(docs, metas, distances):
-                    memories.append({
-                        "text": doc,
-                        "person_id": meta.get("person_id", "unknown"),
-                        "score": 1.0 - dist,  # ChromaDB 返回距离，转换为相似度
-                    })
+                for doc, meta, dist in zip(docs, metas, distances, strict=False):
+                    memories.append(
+                        {
+                            "text": doc,
+                            "person_id": meta.get("person_id", "unknown"),
+                            "score": 1.0 - dist,  # ChromaDB 返回距离，转换为相似度
+                        }
+                    )
 
             return memories
         except Exception as e:

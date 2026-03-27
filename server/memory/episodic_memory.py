@@ -12,6 +12,7 @@ logger = logging.getLogger("companion_bot.episodic_memory")
 @dataclass
 class Episode:
     """情景记忆事件"""
+
     event_id: str
     person_id: str
     timestamp: float
@@ -70,9 +71,7 @@ class EpisodicMemory:
         )
         return event_id
 
-    async def get_recent(
-        self, person_id: str, limit: int = 5
-    ) -> list[Episode]:
+    async def get_recent(self, person_id: str, limit: int = 5) -> list[Episode]:
         """获取某人最近的情景记忆"""
         cursor = self.conn.execute(
             """SELECT * FROM episodic_memory

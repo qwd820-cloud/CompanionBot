@@ -8,9 +8,9 @@ from pathlib import Path
 # 将项目根目录加入 sys.path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from server.perception.speaker_id import SpeakerIdentifier
-from server.perception.face_id import FaceIdentifier
 from server.memory.long_term_profile import LongTermProfile
+from server.perception.face_id import FaceIdentifier
+from server.perception.speaker_id import SpeakerIdentifier
 
 
 async def enroll(args):
@@ -33,20 +33,28 @@ async def enroll(args):
         audio_dir = Path(args.audio_dir)
         if audio_dir.exists():
             import numpy as np
+
             audio_samples = []
-            for audio_file in sorted(audio_dir.glob("*.wav")) + sorted(audio_dir.glob("*.pcm")):
+            for audio_file in sorted(audio_dir.glob("*.wav")) + sorted(
+                audio_dir.glob("*.pcm")
+            ):
                 print(f"  加载音频: {audio_file.name}")
                 if audio_file.suffix == ".wav":
                     import wave
+
                     with wave.open(str(audio_file), "rb") as wf:
-                        pcm = np.frombuffer(
-                            wf.readframes(wf.getnframes()), dtype=np.int16
-                        ).astype(np.float32) / 32768.0
+                        pcm = (
+                            np.frombuffer(
+                                wf.readframes(wf.getnframes()), dtype=np.int16
+                            ).astype(np.float32)
+                            / 32768.0
+                        )
                         audio_samples.append(pcm)
                 else:
-                    pcm = np.fromfile(str(audio_file), dtype=np.int16).astype(
-                        np.float32
-                    ) / 32768.0
+                    pcm = (
+                        np.fromfile(str(audio_file), dtype=np.int16).astype(np.float32)
+                        / 32768.0
+                    )
                     audio_samples.append(pcm)
 
             if audio_samples:
@@ -62,7 +70,9 @@ async def enroll(args):
         photo_dir = Path(args.photo_dir)
         if photo_dir.exists():
             image_data_list = []
-            for img_file in sorted(photo_dir.glob("*.jpg")) + sorted(photo_dir.glob("*.png")):
+            for img_file in sorted(photo_dir.glob("*.jpg")) + sorted(
+                photo_dir.glob("*.png")
+            ):
                 print(f"  加载照片: {img_file.name}")
                 image_data_list.append(img_file.read_bytes())
 
@@ -92,9 +102,9 @@ def main():
     parser = argparse.ArgumentParser(description="注册新家庭成员")
     parser.add_argument("--name", required=True, help="成员姓名")
     parser.add_argument("--nickname", help="称呼/昵称")
-    parser.add_argument("--role", default="adult",
-                        choices=["elder", "child", "adult"],
-                        help="角色类型")
+    parser.add_argument(
+        "--role", default="adult", choices=["elder", "child", "adult"], help="角色类型"
+    )
     parser.add_argument("--age", type=int, help="年龄")
     parser.add_argument("--relationship", help="与家庭的关系")
     parser.add_argument("--audio-dir", help="声纹样本目录 (WAV/PCM 文件)")

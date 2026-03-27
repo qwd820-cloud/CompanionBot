@@ -26,9 +26,17 @@ async def simulate_text(person_id: str):
                     data = json.loads(message)
                     if data.get("type") == "reply":
                         emotion = data.get("emotion", "neutral")
-                        print(f"\n小伴 [{emotion}]: {data.get('text', '')}\n> ", end="", flush=True)
+                        print(
+                            f"\n小伴 [{emotion}]: {data.get('text', '')}\n> ",
+                            end="",
+                            flush=True,
+                        )
                     elif data.get("type") == "alert":
-                        print(f"\n[警报] {data.get('message', '')}\n> ", end="", flush=True)
+                        print(
+                            f"\n[警报] {data.get('message', '')}\n> ",
+                            end="",
+                            flush=True,
+                        )
             except Exception:
                 pass
 
@@ -44,11 +52,15 @@ async def simulate_text(person_id: str):
                 if not text.strip():
                     continue
 
-                await ws.send(json.dumps({
-                    "type": "text_input",
-                    "person_id": person_id,
-                    "text": text,
-                }))
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "text_input",
+                            "person_id": person_id,
+                            "text": text,
+                        }
+                    )
+                )
         finally:
             recv_task.cancel()
 
@@ -58,6 +70,7 @@ async def simulate_text(person_id: str):
 async def simulate_audio(audio_path: str):
     """音频模式模拟对话"""
     import struct
+
     import websockets
 
     uri = "ws://localhost:8765/ws/simulator"
@@ -71,6 +84,7 @@ async def simulate_audio(audio_path: str):
 
     # 读取 WAV 文件
     import wave
+
     with wave.open(str(audio_file), "rb") as wf:
         audio_data = wf.readframes(wf.getnframes())
 
@@ -92,7 +106,7 @@ async def simulate_audio(audio_path: str):
         chunk_size = 3200  # 100ms @ 16kHz 16-bit
         msg_type = 1  # AUDIO
         for i in range(0, len(audio_data), chunk_size):
-            chunk = audio_data[i:i + chunk_size]
+            chunk = audio_data[i : i + chunk_size]
             header = struct.pack("!B", msg_type)
             await ws.send(header + chunk)
             await asyncio.sleep(0.1)  # 模拟实时

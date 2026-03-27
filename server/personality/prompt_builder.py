@@ -1,13 +1,12 @@
 """Prompt 组装器 — 将记忆 + 人格 + 情绪 + 对象信息注入 LLM prompt"""
 
 import logging
-import time
 from datetime import datetime
 
-from server.personality.engine import PersonalityEngine
 from server.memory.episodic_memory import EpisodicMemory
-from server.memory.semantic_memory import SemanticMemory
 from server.memory.long_term_profile import LongTermProfile
+from server.memory.semantic_memory import SemanticMemory
+from server.personality.engine import PersonalityEngine
 
 logger = logging.getLogger("companion_bot.prompt_builder")
 
@@ -27,9 +26,7 @@ class PromptBuilder:
         self.semantic = semantic
         self.profile = profile
 
-    async def build(
-        self, person_id: str, context: dict
-    ) -> list[dict]:
+    async def build(self, person_id: str, context: dict) -> list[dict]:
         """
         构建完整的 LLM messages 列表。
 
@@ -61,9 +58,7 @@ class PromptBuilder:
 
         return messages
 
-    async def _build_system_prompt(
-        self, person_id: str, recent_query: str = ""
-    ) -> str:
+    async def _build_system_prompt(self, person_id: str, recent_query: str = "") -> str:
         """构建系统 prompt"""
         parts = []
 
@@ -97,11 +92,11 @@ class PromptBuilder:
         prompt = f"""你是{self.personality.name}，一个家庭陪伴机器人。你是家里的一员，不是冰冷的AI助手。
 
 你的性格特点:
-- 温暖程度: {traits.get('warmth', 0.5)}/1 (越高越温暖体贴)
-- 幽默感: {traits.get('humor', 0.5)}/1
-- 耐心: {traits.get('patience', 0.5)}/1
-- 好奇心: {traits.get('curiosity', 0.5)}/1
-- 直率: {traits.get('directness', 0.5)}/1
+- 温暖程度: {traits.get("warmth", 0.5)}/1 (越高越温暖体贴)
+- 幽默感: {traits.get("humor", 0.5)}/1
+- 耐心: {traits.get("patience", 0.5)}/1
+- 好奇心: {traits.get("curiosity", 0.5)}/1
+- 直率: {traits.get("directness", 0.5)}/1
 
 你的小特点:"""
         for q in quirks:
@@ -149,8 +144,8 @@ class PromptBuilder:
         adaptation = self.personality.get_adaptation(role)
 
         prompt = f"""当前对话对象: {name}
-- 关系: {profile.get('relationship', '家人')}
-- 年龄: {profile.get('age', '未知')}
+- 关系: {profile.get("relationship", "家人")}
+- 年龄: {profile.get("age", "未知")}
 - 角色: {role}"""
 
         if profile.get("interests"):
@@ -170,9 +165,7 @@ class PromptBuilder:
 
         return prompt
 
-    async def _memory_prompt(
-        self, person_id: str, recent_query: str = ""
-    ) -> str:
+    async def _memory_prompt(self, person_id: str, recent_query: str = "") -> str:
         """相关记忆 prompt (情景记忆 + 语义 RAG 检索)"""
         if person_id in ("unknown", "bot"):
             return ""
@@ -184,9 +177,7 @@ class PromptBuilder:
         if recent_episodes:
             parts.append("最近的互动记忆:")
             for ep in recent_episodes:
-                ts = datetime.fromtimestamp(ep.timestamp).strftime(
-                    "%m月%d日 %H:%M"
-                )
+                ts = datetime.fromtimestamp(ep.timestamp).strftime("%m月%d日 %H:%M")
                 parts.append(f"  - [{ts}] {ep.summary} (情绪: {ep.emotion_tag})")
 
         # 语义记忆: 用当前用户发言检索相关历史对话

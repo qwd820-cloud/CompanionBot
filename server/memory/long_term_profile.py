@@ -61,11 +61,17 @@ class LongTermProfile:
                 recent_concerns, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)""",
             (
-                person_id, name, nickname, role, age, relationship,
+                person_id,
+                name,
+                nickname,
+                role,
+                age,
+                relationship,
                 json.dumps(interests or [], ensure_ascii=False),
                 json.dumps(health_conditions or [], ensure_ascii=False),
                 json.dumps(communication_preferences or {}, ensure_ascii=False),
-                now, now,
+                now,
+                now,
             ),
         )
         self.conn.commit()
@@ -90,9 +96,7 @@ class LongTermProfile:
             "relationship": row["relationship"],
             "interests": json.loads(row["interests"]),
             "health_conditions": json.loads(row["health_conditions"]),
-            "communication_preferences": json.loads(
-                row["communication_preferences"]
-            ),
+            "communication_preferences": json.loads(row["communication_preferences"]),
             "recent_concerns": json.loads(row["recent_concerns"]),
         }
 

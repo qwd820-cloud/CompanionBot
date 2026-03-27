@@ -15,7 +15,7 @@ logger = logging.getLogger("companion_bot.intervention")
 
 INTERVENTION_THRESHOLD = 0.6
 COOLDOWN_SECONDS = 120  # 被忽略后 2 分钟冷却
-FREQUENCY_WINDOW = 300   # 5 分钟窗口
+FREQUENCY_WINDOW = 300  # 5 分钟窗口
 
 
 class InterventionDecider:
@@ -60,12 +60,7 @@ class InterventionDecider:
         role = self._role_score(latest_text)
         freq_penalty = self._frequency_penalty()
 
-        score = (
-            relevance * 0.3
-            + timing * 0.2
-            + role * 0.4
-            - freq_penalty * 0.3
-        )
+        score = relevance * 0.3 + timing * 0.2 + role * 0.4 - freq_penalty * 0.3
 
         should = score >= self.threshold
         reason = (
@@ -131,6 +126,10 @@ class InterventionDecider:
         if any(kw in text for kw in ["摔", "痛", "救"]):
             return 1.0
 
+        # 健康讨论 — 机器人可以提供有用信息
+        if match_any_keyword(text, HEALTH_KEYWORDS):
+            return 0.8
+
         if any(kw in text for kw in ["天气", "几点", "提醒"]):
             return 0.8
 
@@ -144,8 +143,7 @@ class InterventionDecider:
         now = time.time()
         # 清理过期记录
         self._recent_interventions = [
-            t for t in self._recent_interventions
-            if now - t < FREQUENCY_WINDOW
+            t for t in self._recent_interventions if now - t < FREQUENCY_WINDOW
         ]
         count = len(self._recent_interventions)
         if count == 0:

@@ -18,6 +18,7 @@ class Priority(IntEnum):
 @dataclass
 class NotificationRecord:
     """通知记录"""
+
     priority: Priority
     phone: str
     message: str
@@ -56,9 +57,7 @@ class NotificationManager:
         for contact in contacts:
             # 限流检查
             if not self._rate_limit_check(priority, contact["phone"]):
-                logger.info(
-                    f"通知被限流: {contact['name']} ({priority.name})"
-                )
+                logger.info(f"通知被限流: {contact['name']} ({priority.name})")
                 continue
 
             record = NotificationRecord(
@@ -68,21 +67,22 @@ class NotificationManager:
             )
 
             # 生成 WebSocket 指令 (实际发送由手机端执行)
-            self._pending_ws_commands.append({
-                "type": "notification",
-                "action": "send_sms",
-                "phone": contact["phone"],
-                "message": f"[{priority.name}] {message}",
-                "contact_name": contact["name"],
-            })
+            self._pending_ws_commands.append(
+                {
+                    "type": "notification",
+                    "action": "send_sms",
+                    "phone": contact["phone"],
+                    "message": f"[{priority.name}] {message}",
+                    "contact_name": contact["name"],
+                }
+            )
 
             record.sent = True
             records.append(record)
             self._sent_records.append(record)
 
             logger.info(
-                f"通知已排队: {priority.name} → {contact['name']} "
-                f"({contact['phone']})"
+                f"通知已排队: {priority.name} → {contact['name']} ({contact['phone']})"
             )
 
         return records
@@ -101,11 +101,10 @@ class NotificationManager:
         matched = []
         for contact in self.contacts:
             levels = contact.get("notification_levels", [])
-            if priority_str in levels:
-                if target_levels is None or any(
-                    l in levels for l in target_levels
-                ):
-                    matched.append(contact)
+            if priority_str in levels and (
+                target_levels is None or any(lv in levels for lv in target_levels)
+            ):
+                matched.append(contact)
         return matched
 
     def _rate_limit_check(self, priority: Priority, phone: str) -> bool:
@@ -120,7 +119,8 @@ class NotificationManager:
             # P1: 每小时最多 3 条
             hour_ago = now - 3600
             recent = [
-                r for r in self._sent_records
+                r
+                for r in self._sent_records
                 if r.phone == phone
                 and r.priority == Priority.P1
                 and r.timestamp > hour_ago
@@ -130,7 +130,8 @@ class NotificationManager:
         # P2/P3: 每天最多 1 条
         day_ago = now - 86400
         recent = [
-            r for r in self._sent_records
+            r
+            for r in self._sent_records
             if r.phone == phone
             and r.priority.value >= Priority.P2
             and r.timestamp > day_ago

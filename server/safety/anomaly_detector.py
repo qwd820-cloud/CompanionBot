@@ -28,6 +28,7 @@ class AnomalyType(str, Enum):
 @dataclass
 class Anomaly:
     """检测到的异常"""
+
     type: AnomalyType
     severity: str  # "P0", "P1", "P2"
     person_id: str
@@ -43,9 +44,7 @@ class AnomalyDetector:
         self._last_activity: dict[str, float] = {}  # person_id → timestamp
         self._distress_cooldown: dict[str, float] = {}
 
-    async def check_audio(
-        self, text: str, person_id: str
-    ) -> Anomaly | None:
+    async def check_audio(self, text: str, person_id: str) -> Anomaly | None:
         """检查音频转写文本中的异常"""
         # 更新活动时间
         self._last_activity[person_id] = time.time()
@@ -86,9 +85,7 @@ class AnomalyDetector:
 
         return None
 
-    async def check_presence(
-        self, person_id: str, client_id: str
-    ) -> Anomaly | None:
+    async def check_presence(self, person_id: str, client_id: str) -> Anomaly | None:
         """检查长时间无活动"""
         if person_id in ("unknown", "bot"):
             return None
@@ -103,7 +100,7 @@ class AnomalyDetector:
                 type=AnomalyType.INACTIVITY,
                 severity="P1",
                 person_id=person_id,
-                description=f"长时间无活动: {idle_time/3600:.1f} 小时",
+                description=f"长时间无活动: {idle_time / 3600:.1f} 小时",
                 timestamp=now,
             )
 

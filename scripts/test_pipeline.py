@@ -11,10 +11,9 @@ import numpy as np
 
 async def test_perception_pipeline():
     """测试感知层管线"""
-    from server.perception.vad import VADProcessor
-    from server.perception.speaker_id import SpeakerIdentifier
-    from server.perception.asr import ASRProcessor
     from server.perception.identity_fusion import IdentityFusion
+    from server.perception.speaker_id import SpeakerIdentifier
+    from server.perception.vad import VADProcessor
 
     print("=== 感知层管线测试 ===\n")
 
@@ -60,8 +59,8 @@ async def test_perception_pipeline():
 async def test_memory_pipeline():
     """测试记忆层管线"""
     import tempfile
+
     from server.memory.episodic_memory import EpisodicMemory
-    from server.memory.semantic_memory import SemanticMemory
     from server.memory.long_term_profile import LongTermProfile
     from server.memory.working_memory import WorkingMemory
 
@@ -106,7 +105,9 @@ async def test_memory_pipeline():
         wm = WorkingMemory()
         wm.start_session("test_session")
         wm.add_turn("test_session", "grandpa", "小伴，今天天气怎么样？", "user")
-        wm.add_turn("test_session", "bot", "爷爷好！今天晴天，适合出去散步。", "assistant")
+        wm.add_turn(
+            "test_session", "bot", "爷爷好！今天晴天，适合出去散步。", "assistant"
+        )
 
         is_bot = wm.is_addressed_to_bot("test_session", "小伴你真棒")
         print(f"   唤醒词检测: '小伴你真棒' → {is_bot}")
@@ -140,9 +141,7 @@ async def test_personality():
     engine = PersonalityEngine(config=config)
     print(f"   初始情绪: {engine.current_emotion}")
 
-    engine.update_emotion(
-        {"turns": [{"role": "user", "text": "我头好疼"}]}, ""
-    )
+    engine.update_emotion({"turns": [{"role": "user", "text": "我头好疼"}]}, "")
     print(f"   听到'头好疼'后: {engine.current_emotion}")
 
     engine.update_emotion(
@@ -154,14 +153,14 @@ async def test_personality():
     print("2. 插话决策测试...")
     decider = InterventionDecider()
 
-    result = decider.should_intervene({
-        "turns": [{"text": "救命啊！", "role": "user", "timestamp": 0}]
-    })
+    result = decider.should_intervene(
+        {"turns": [{"text": "救命啊！", "role": "user", "timestamp": 0}]}
+    )
     print(f"   '救命啊' → 插话={result[0]}, 原因={result[1]}")
 
-    result = decider.should_intervene({
-        "turns": [{"text": "今天工作好累", "role": "user", "timestamp": 0}]
-    })
+    result = decider.should_intervene(
+        {"turns": [{"text": "今天工作好累", "role": "user", "timestamp": 0}]}
+    )
     print(f"   '今天工作好累' → 插话={result[0]}")
 
     print("\n人格层测试完成\n")

@@ -27,8 +27,8 @@ class FaceIdentifier:
     async def initialize(self):
         """加载 InsightFace buffalo_l 模型"""
         try:
-            import insightface
             from insightface.app import FaceAnalysis
+
             self.model = FaceAnalysis(
                 name="buffalo_l",
                 providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -109,14 +109,13 @@ class FaceIdentifier:
             return
 
         self.enrolled[person_id] = mean_normalize_embeddings(embeddings)
-        logger.info(
-            f"人脸注册成功: {person_id}, {len(embeddings)} 张照片"
-        )
+        logger.info(f"人脸注册成功: {person_id}, {len(embeddings)} 张照片")
 
     def _decode_image(self, data: bytes) -> np.ndarray | None:
         """解码 JPEG 图像"""
         try:
             import cv2
+
             arr = np.frombuffer(data, dtype=np.uint8)
             image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
             return image

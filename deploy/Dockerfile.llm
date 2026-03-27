@@ -1,0 +1,19 @@
+# LLM 推理引擎 — NGC PyTorch + HuggingFace Transformers 原生推理
+# SGLang/vLLM 不支持 Blackwell SM121 (DGX Spark GB10)
+# 用 Transformers 原生推理 + 自研 OpenAI 兼容 API 服务器
+FROM nvcr.io/nvidia/pytorch:25.04-py3
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV http_proxy="" https_proxy="" HTTP_PROXY="" HTTPS_PROXY="" ALL_PROXY="" all_proxy="" no_proxy="*"
+
+WORKDIR /app
+
+# NGC 镜像已有 torch + transformers，只需要 fastapi/uvicorn
+RUN echo "" > /etc/pip/constraint.txt && \
+    pip install --no-cache-dir fastapi uvicorn transformers accelerate
+
+COPY server/llm_server.py server/llm_server.py
+
+EXPOSE 8000
+
+CMD ["python", "-m", "server.llm_server", "--model", "Qwen/Qwen3.5-27B", "--port", "8000"]

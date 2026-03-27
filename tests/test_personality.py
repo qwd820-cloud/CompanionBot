@@ -25,9 +25,7 @@ class TestEmotionStateMachine:
 
     def test_health_concern(self):
         engine = make_engine()
-        engine.update_emotion(
-            {"turns": [{"role": "user", "text": "我头好疼啊"}]}, ""
-        )
+        engine.update_emotion({"turns": [{"role": "user", "text": "我头好疼啊"}]}, "")
         assert engine.current_emotion == "concerned"
 
     def test_happy_trigger(self):
@@ -40,7 +38,8 @@ class TestEmotionStateMachine:
     def test_curious_trigger(self):
         engine = make_engine()
         engine.update_emotion(
-            {"turns": [{"role": "user", "text": "你知道吗，隔壁老王种了一棵桂花树"}]}, ""
+            {"turns": [{"role": "user", "text": "你知道吗，隔壁老王种了一棵桂花树"}]},
+            "",
         )
         assert engine.current_emotion == "curious"
 
@@ -49,9 +48,7 @@ class TestEmotionStateMachine:
         engine.current_emotion = "happy"
         # 模拟多轮对话后情绪衰减
         for _ in range(6):
-            engine.update_emotion(
-                {"turns": [{"role": "user", "text": "嗯嗯"}]}, ""
-            )
+            engine.update_emotion({"turns": [{"role": "user", "text": "嗯嗯"}]}, "")
         # 经过足够轮次后应回到 happy 的推断结果或 neutral
         # 因为 "嗯嗯" 不匹配任何关键词，情绪会保持并最终衰减
         assert engine.current_emotion == "neutral"

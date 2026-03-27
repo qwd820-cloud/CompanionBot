@@ -21,6 +21,7 @@ MAX_BUFFER_SAMPLES = SAMPLE_RATE * 30  # 最大缓冲 30 秒，防止内存无�
 @dataclass
 class SpeechSegment:
     """检测到的语音段"""
+
     audio: np.ndarray
     start_ms: float
     end_ms: float
@@ -50,12 +51,24 @@ class VADProcessor:
     async def initialize(self):
         """加载 Silero VAD 模型"""
         try:
+            from pathlib import Path
+
             import torch
-            self.model, utils = torch.hub.load(
-                repo_or_dir="snakers4/silero-vad",
-                model="silero_vad",
-                trust_repo=True,
-            )
+
+            local_repo = Path.home() / ".cache/torch/hub/snakers4_silero-vad_master"
+            if local_repo.exists():
+                self.model, utils = torch.hub.load(
+                    repo_or_dir=str(local_repo),
+                    model="silero_vad",
+                    source="local",
+                    trust_repo=True,
+                )
+            else:
+                self.model, utils = torch.hub.load(
+                    repo_or_dir="snakers4/silero-vad",
+                    model="silero_vad",
+                    trust_repo=True,
+                )
             self.model.eval()
             logger.info("Silero VAD 模型加载成功")
         except Exception as e:
@@ -93,21 +106,18 @@ class VADProcessor:
                 self._silence_count += 1
                 silence_ms = self._silence_count * window_ms
 
-                if (
-                    self._speech_start is not None
-                    and silence_ms >= self.min_silence_ms
-                ):
+                if self._speech_start is not None and silence_ms >= self.min_silence_ms:
                     speech_audio = np.concatenate(self._speech_buffer)
-                    speech_ms = (
-                        len(speech_audio) / self.sample_rate
-                    ) * 1000
+                    speech_ms = (len(speech_audio) / self.sample_rate) * 1000
 
                     if speech_ms >= self.min_speech_ms:
-                        segments.append(SpeechSegment(
-                            audio=speech_audio,
-                            start_ms=self._speech_start,
-                            end_ms=self._speech_start + speech_ms,
-                        ))
+                        segments.append(
+                            SpeechSegment(
+                                audio=speech_audio,
+                                start_ms=self._speech_start,
+                                end_ms=self._speech_start + speech_ms,
+                            )
+                        )
 
                     self._speech_start = None
                     self._speech_buffer = []
@@ -123,13 +133,14 @@ class VADProcessor:
     def _silero_detect(self, window: np.ndarray) -> bool:
         """使用 Silero VAD 模型检测"""
         import torch
+
         tensor = torch.from_numpy(window)
         prob = self.model(tensor, self.sample_rate).item()
         return prob >= self.threshold
 
     def _energy_detect(self, window: np.ndarray) -> bool:
         """能量检测回退方案"""
-        energy = np.sqrt(np.mean(window ** 2))
+        energy = np.sqrt(np.mean(window**2))
         return energy > 0.01  # 简单能量阈值
 
     def reset(self):

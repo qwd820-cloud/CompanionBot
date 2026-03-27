@@ -1,7 +1,6 @@
 """声纹识别测试"""
 
 import asyncio
-import tempfile
 
 import numpy as np
 import pytest
@@ -40,9 +39,7 @@ def test_enroll_and_identify(speaker_id):
 def test_unknown_speaker(speaker_id):
     """测试未注册的说话人"""
     audio = np.random.randn(16000).astype(np.float32)
-    result = asyncio.get_event_loop().run_until_complete(
-        speaker_id.identify(audio)
-    )
+    result = asyncio.get_event_loop().run_until_complete(speaker_id.identify(audio))
     # 无注册声纹时应返回 unknown
     assert result["person_id"] == "unknown" or result["score"] == 0.0
 

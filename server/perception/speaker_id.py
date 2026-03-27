@@ -1,6 +1,7 @@
 """声纹识别模块 — SpeechBrain ECAPA-TDNN"""
 
 import logging
+import os
 from pathlib import Path
 
 import numpy as np
@@ -35,12 +36,41 @@ class SpeakerIdentifier:
     async def initialize(self):
         """加载模型和已注册声纹"""
         try:
+            # torchaudio >= 2.1 移除了 list_audio_backends 等旧 API，
+            # 但 SpeechBrain 1.0.x 仍会调用它们，需要补丁兼容
+            import torchaudio
+
+            if not hasattr(torchaudio, "list_audio_backends"):
+                torchaudio.list_audio_backends = lambda: ["soundfile"]
+            if not hasattr(torchaudio, "set_audio_backend"):
+                torchaudio.set_audio_backend = lambda _: None
+            if not hasattr(torchaudio, "get_audio_backend"):
+                torchaudio.get_audio_backend = lambda: "soundfile"
+
+            # 禁止 HuggingFace Hub 联网检查 (无代理环境下会阻塞启动)
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
             from speechbrain.inference.speaker import (
                 EncoderClassifier,
             )
+
+            # 用本地已下载的模型路径加载，绕过 from_hparams 的 HF 下载逻辑
+            # (SpeechBrain 1.0.3 的 fetching.py 与新版 huggingface_hub 不兼容)
+            local_model = (
+                Path.home()
+                / ".cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286"
+            )
+            if local_model.exists():
+                source = str(local_model)
+            else:
+                source = "speechbrain/spkrec-ecapa-voxceleb"
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
             self.model = EncoderClassifier.from_hparams(
-                source="speechbrain/spkrec-ecapa-voxceleb",
-                run_opts={"device": "cuda"},
+                source=source,
+                run_opts={"device": device},
             )
             logger.info("SpeechBrain ECAPA-TDNN 加载成功")
         except Exception as e:
@@ -57,9 +87,7 @@ class SpeakerIdentifier:
             self.enrolled[person_id] = np.load(str(npy_file))
             logger.info(f"加载声纹: {person_id}")
 
-    async def identify(
-        self, segment
-    ) -> dict:
+    async def identify(self, segment) -> dict:
         """
         识别说话人。
         输入: SpeechSegment 或 numpy 音频数据
@@ -87,9 +115,7 @@ class SpeakerIdentifier:
 
         return {"person_id": "unknown", "score": float(best_score)}
 
-    async def enroll(
-        self, person_id: str, audio_samples: list[np.ndarray] | bytes
-    ):
+    async def enroll(self, person_id: str, audio_samples: list[np.ndarray] | bytes):
         """
         注册新声纹。
         输入: person_id, 3~5 段语音音频
@@ -111,9 +137,7 @@ class SpeakerIdentifier:
         self.enrolled[person_id] = enrolled_emb
         save_path = self.voiceprint_dir / f"{person_id}.npy"
         np.save(str(save_path), enrolled_emb)
-        logger.info(
-            f"声纹注册成功: {person_id}, {len(embeddings)} 段样本"
-        )
+        logger.info(f"声纹注册成功: {person_id}, {len(embeddings)} 段样本")
 
     def _extract_embedding(self, audio: np.ndarray) -> np.ndarray | None:
         """提取音频的 speaker embedding"""
@@ -122,6 +146,7 @@ class SpeakerIdentifier:
 
         try:
             import torch
+
             if audio.dtype != np.float32:
                 audio = audio.astype(np.float32)
             tensor = torch.from_numpy(audio).unsqueeze(0)
@@ -133,9 +158,7 @@ class SpeakerIdentifier:
 
     def _dummy_embedding(self, audio: np.ndarray) -> np.ndarray:
         """无模型时的虚拟 embedding (仅用于开发测试)"""
-        rng = np.random.RandomState(
-            int(np.abs(audio[:100].sum()) * 1000) % (2**31)
-        )
+        rng = np.random.RandomState(int(np.abs(audio[:100].sum()) * 1000) % (2**31))
         emb = rng.randn(EMBEDDING_DIM).astype(np.float32)
         return normalize_embedding(emb)
 

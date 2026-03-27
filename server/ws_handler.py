@@ -16,11 +16,12 @@ router = APIRouter()
 
 class MessageType(IntEnum):
     """WebSocket 消息类型"""
-    AUDIO = 1       # 音频数据 (16kHz PCM)
-    VIDEO = 2       # 视频帧 (JPEG)
-    TEXT = 3        # 文本消息 (JSON)
-    TTS_AUDIO = 4   # TTS 回放音频
-    COMMAND = 5     # 控制指令
+
+    AUDIO = 1  # 音频数据 (16kHz PCM)
+    VIDEO = 2  # 视频帧 (JPEG)
+    TEXT = 3  # 文本消息 (JSON)
+    TTS_AUDIO = 4  # TTS 回放音频
+    COMMAND = 5  # 控制指令
     NOTIFICATION = 6  # 通知指令 (发短信等)
 
 
@@ -50,17 +51,17 @@ class ConnectionManager:
         if ws:
             await ws.send_json(data)
 
-    async def send_notification_command(
-        self, client_id: str, phone: str, message: str
-    ):
+    async def send_notification_command(self, client_id: str, phone: str, message: str):
         ws = self.active_connections.get(client_id)
         if ws:
-            await ws.send_json({
-                "type": "notification",
-                "action": "send_sms",
-                "phone": phone,
-                "message": message,
-            })
+            await ws.send_json(
+                {
+                    "type": "notification",
+                    "action": "send_sms",
+                    "phone": phone,
+                    "message": message,
+                }
+            )
 
 
 manager = ConnectionManager()
@@ -91,9 +92,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
         # 对话结束，触发记忆沉淀
         session_data = app.state.working_memory.end_session(client_id)
         if session_data and session_data.get("turns"):
-            asyncio.create_task(
-                app.state.consolidation.consolidate(session_data)
-            )
+            asyncio.create_task(app.state.consolidation.consolidate(session_data))
         manager.disconnect(client_id)
 
 
@@ -154,9 +153,7 @@ async def _process_audio(app, client_id: str, audio_data: bytes):
             text=text, person_id=person_id
         )
         if anomaly:
-            await app.state.alert_manager.handle_anomaly(
-                anomaly, client_id, manager
-            )
+            await app.state.alert_manager.handle_anomaly(anomaly, client_id, manager)
 
         # 身份融合 (如果同时有视频人脸结果)
         face_result = app.state.working_memory.get_latest_face(client_id)
@@ -178,9 +175,7 @@ async def _process_audio(app, client_id: str, audio_data: bytes):
         )
 
         # 判断是否需要回复 (直接对话 or 插话决策)
-        should_respond = app.state.working_memory.is_addressed_to_bot(
-            client_id, text
-        )
+        should_respond = app.state.working_memory.is_addressed_to_bot(client_id, text)
         if not should_respond:
             context = app.state.working_memory.get_context(client_id)
             decision = app.state.intervention.should_intervene(context)
@@ -202,9 +197,7 @@ async def _process_video(app, client_id: str, frame_data: bytes):
             client_id=client_id,
         )
         if anomaly:
-            await app.state.alert_manager.handle_anomaly(
-                anomaly, client_id, manager
-            )
+            await app.state.alert_manager.handle_anomaly(anomaly, client_id, manager)
 
 
 async def _generate_and_respond(app, client_id: str, person_id: str):
@@ -232,21 +225,30 @@ async def _generate_and_respond(app, client_id: str, person_id: str):
         role="assistant",
     )
 
-    # TTS 合成
-    audio_data = await app.state.tts.synthesize(
-        text=reply_text,
-        emotion=app.state.personality.current_emotion,
+    # 先发文本回复（不等 TTS，确保客户端能快速收到文本）
+    current_emotion = app.state.personality.current_emotion
+    await manager.send_json_message(
+        client_id,
+        {
+            "type": "reply",
+            "person_id": person_id,
+            "text": reply_text,
+            "emotion": current_emotion,
+        },
     )
 
-    # 发送回复
-    await manager.send_json_message(client_id, {
-        "type": "reply",
-        "person_id": person_id,
-        "text": reply_text,
-        "emotion": app.state.personality.current_emotion,
-    })
-    if audio_data:
-        await manager.send_tts_audio(client_id, audio_data)
+    # 异步 TTS 合成（不阻塞回复）
+    try:
+        audio_data = await asyncio.wait_for(
+            app.state.tts.synthesize(text=reply_text, emotion=current_emotion),
+            timeout=15,
+        )
+        if audio_data:
+            await manager.send_tts_audio(client_id, audio_data)
+    except TimeoutError:
+        logger.warning(f"TTS 合成超时 (15s), 跳过音频: {reply_text[:30]}...")
+    except Exception as e:
+        logger.warning(f"TTS 合成失败: {e}")
 
 
 async def _handle_enroll_voice(app, client_id: str, msg: dict):
@@ -259,6 +261,7 @@ async def _handle_enroll_voice(app, client_id: str, msg: dict):
     audio_samples_b64 = msg.get("audio_samples", [])
     if audio_samples_b64:
         import numpy as np
+
         audio_samples = []
         for b64_str in audio_samples_b64:
             raw = base64.b64decode(b64_str)
@@ -268,20 +271,26 @@ async def _handle_enroll_voice(app, client_id: str, msg: dict):
         try:
             await app.state.speaker_id.enroll(person_id, audio_samples)
             logger.info(f"声纹注册完成: {person_id}, {len(audio_samples)} 段")
-            await manager.send_json_message(client_id, {
-                "type": "enroll_result",
-                "step": "voice",
-                "success": True,
-                "message": f"声纹注册成功 ({len(audio_samples)} 段音频)",
-            })
+            await manager.send_json_message(
+                client_id,
+                {
+                    "type": "enroll_result",
+                    "step": "voice",
+                    "success": True,
+                    "message": f"声纹注册成功 ({len(audio_samples)} 段音频)",
+                },
+            )
         except Exception as e:
             logger.error(f"声纹注册失败: {person_id}: {e}")
-            await manager.send_json_message(client_id, {
-                "type": "enroll_result",
-                "step": "voice",
-                "success": False,
-                "message": f"声纹注册失败: {e}",
-            })
+            await manager.send_json_message(
+                client_id,
+                {
+                    "type": "enroll_result",
+                    "step": "voice",
+                    "success": False,
+                    "message": f"声纹注册失败: {e}",
+                },
+            )
     else:
         # 旧协议回退
         audio_data = msg.get("audio_data")
@@ -303,20 +312,26 @@ async def _handle_enroll_face(app, client_id: str, msg: dict):
         try:
             await app.state.face_id.enroll(person_id, image_data_list)
             logger.info(f"人脸注册完成: {person_id}, {len(image_data_list)} 张")
-            await manager.send_json_message(client_id, {
-                "type": "enroll_result",
-                "step": "face",
-                "success": True,
-                "message": f"人脸注册成功 ({len(image_data_list)} 张照片)",
-            })
+            await manager.send_json_message(
+                client_id,
+                {
+                    "type": "enroll_result",
+                    "step": "face",
+                    "success": True,
+                    "message": f"人脸注册成功 ({len(image_data_list)} 张照片)",
+                },
+            )
         except Exception as e:
             logger.error(f"人脸注册失败: {person_id}: {e}")
-            await manager.send_json_message(client_id, {
-                "type": "enroll_result",
-                "step": "face",
-                "success": False,
-                "message": f"人脸注册失败: {e}",
-            })
+            await manager.send_json_message(
+                client_id,
+                {
+                    "type": "enroll_result",
+                    "step": "face",
+                    "success": False,
+                    "message": f"人脸注册失败: {e}",
+                },
+            )
     else:
         # 旧协议回退
         image_data = msg.get("image_data")
@@ -341,20 +356,26 @@ async def _handle_enroll_profile(app, client_id: str, msg: dict):
             relationship=msg.get("relationship", ""),
         )
         logger.info(f"档案注册完成: {person_id}")
-        await manager.send_json_message(client_id, {
-            "type": "enroll_result",
-            "step": "profile",
-            "success": True,
-            "message": f"成员 {msg.get('name', person_id)} 注册成功",
-        })
+        await manager.send_json_message(
+            client_id,
+            {
+                "type": "enroll_result",
+                "step": "profile",
+                "success": True,
+                "message": f"成员 {msg.get('name', person_id)} 注册成功",
+            },
+        )
     except Exception as e:
         logger.error(f"档案注册失败: {person_id}: {e}")
-        await manager.send_json_message(client_id, {
-            "type": "enroll_result",
-            "step": "profile",
-            "success": False,
-            "message": f"档案注册失败: {e}",
-        })
+        await manager.send_json_message(
+            client_id,
+            {
+                "type": "enroll_result",
+                "step": "profile",
+                "success": False,
+                "message": f"档案注册失败: {e}",
+            },
+        )
 
 
 async def _handle_text_input(app, client_id: str, msg: dict):

@@ -3,8 +3,8 @@
 import logging
 from collections import deque
 
-from server.safety.anomaly_detector import Anomaly
 from server.output.notification import NotificationManager, Priority
+from server.safety.anomaly_detector import Anomaly
 
 logger = logging.getLogger("companion_bot.alert_manager")
 
@@ -39,13 +39,15 @@ class AlertManager:
         )
 
         # 记录
-        self._alert_history.append({
-            "type": anomaly.type,
-            "severity": anomaly.severity,
-            "person_id": anomaly.person_id,
-            "description": anomaly.description,
-            "timestamp": anomaly.timestamp,
-        })
+        self._alert_history.append(
+            {
+                "type": anomaly.type,
+                "severity": anomaly.severity,
+                "person_id": anomaly.person_id,
+                "description": anomaly.description,
+                "timestamp": anomaly.timestamp,
+            }
+        )
 
         # 发送通知
         records = await self.notification.send(

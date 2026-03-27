@@ -1,18 +1,83 @@
 """记忆系统测试 — Phase 2 完整覆盖"""
 
 import asyncio
+import hashlib
 import json
 
+import numpy as np
 import pytest
 
+from server.memory.consolidation import MemoryConsolidation
 from server.memory.episodic_memory import EpisodicMemory
 from server.memory.long_term_profile import LongTermProfile
 from server.memory.semantic_memory import SemanticMemory
 from server.memory.working_memory import WorkingMemory
-from server.memory.consolidation import MemoryConsolidation
+
+
+class _HashEmbeddingFunction:
+    """测试用 embedding 函数 — 基于字符 hash，不需要网络下载模型。
+    对相似文本会产生相近的向量（通过 char n-gram 实现）。
+    实现 ChromaDB EmbeddingFunction 协议所需的属性和方法。"""
+
+    def __call__(self, input: list[str]) -> list[list[float]]:
+        return [self._embed(text) for text in input]
+
+    @staticmethod
+    def name() -> str:
+        return "test_hash_embedding"
+
+    @classmethod
+    def build_from_config(cls, config):
+        return _HashEmbeddingFunction()
+
+    def get_config(self):
+        return {}
+
+    @staticmethod
+    def is_legacy() -> bool:
+        return False
+
+    @staticmethod
+    def default_space():
+        return "cosine"
+
+    @staticmethod
+    def supported_spaces():
+        return ["cosine", "l2", "ip"]
+
+    @staticmethod
+    def validate_config(config):
+        pass
+
+    @staticmethod
+    def validate_config_update(old_config, new_config):
+        pass
+
+    def embed_query(self, input: list[str]) -> list[list[float]]:
+        return self(input)
+
+    @staticmethod
+    def _embed(text: str, dim: int = 384) -> list[float]:
+        vec = np.zeros(dim, dtype=np.float64)
+        # char bigram hashing for rudimentary similarity
+        for i in range(len(text)):
+            for gram in [text[i : i + 1], text[i : i + 2]]:
+                if not gram:
+                    continue
+                h = int(hashlib.md5(gram.encode()).hexdigest(), 16)
+                idx = h % dim
+                vec[idx] += 1.0
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vec = vec / norm
+        return vec.tolist()
+
+
+_test_ef = _HashEmbeddingFunction()
 
 
 # ============ Fixtures ============
+
 
 @pytest.fixture
 def db_path(tmp_path):
@@ -35,7 +100,9 @@ def profile(db_path):
 
 @pytest.fixture
 def semantic(tmp_path):
-    sm = SemanticMemory(persist_dir=str(tmp_path / "chroma"))
+    sm = SemanticMemory(
+        persist_dir=str(tmp_path / "chroma"), embedding_function=_test_ef
+    )
     asyncio.get_event_loop().run_until_complete(sm.initialize())
     return sm
 
@@ -58,14 +125,16 @@ class MockLLMClient:
 
 @pytest.fixture
 def mock_llm():
-    return MockLLMClient(response={
-        "summary": "爷爷说膝盖又疼了，情绪有点低落",
-        "importance": 0.8,
-        "emotion": "concerned",
-        "new_interests": [],
-        "new_health": ["膝盖不好"],
-        "new_concerns": ["膝盖疼痛反复"],
-    })
+    return MockLLMClient(
+        response={
+            "summary": "爷爷说膝盖又疼了，情绪有点低落",
+            "importance": 0.8,
+            "emotion": "concerned",
+            "new_interests": [],
+            "new_health": ["膝盖不好"],
+            "new_concerns": ["膝盖疼痛反复"],
+        }
+    )
 
 
 @pytest.fixture
@@ -73,20 +142,32 @@ def consolidation_with_llm(db_path, tmp_path, mock_llm):
     """带 LLM 的 consolidation 实例"""
     loop = asyncio.get_event_loop()
     ep = EpisodicMemory(db_path=db_path)
-    sm = SemanticMemory(persist_dir=str(tmp_path / "chroma"))
+    sm = SemanticMemory(
+        persist_dir=str(tmp_path / "chroma"), embedding_function=_test_ef
+    )
     pf = LongTermProfile(db_path=db_path)
     loop.run_until_complete(ep.initialize())
     loop.run_until_complete(sm.initialize())
     loop.run_until_complete(pf.initialize())
     # 注册一个测试成员
-    loop.run_until_complete(pf.add_member(
-        person_id="grandpa", name="王爷爷", nickname="爷爷",
-        role="elder", age=75, interests=["下棋"],
-        health_conditions=["高血压"],
-    ))
-    return MemoryConsolidation(
-        episodic=ep, semantic=sm, profile=pf, llm_client=mock_llm
-    ), ep, sm, pf, mock_llm
+    loop.run_until_complete(
+        pf.add_member(
+            person_id="grandpa",
+            name="王爷爷",
+            nickname="爷爷",
+            role="elder",
+            age=75,
+            interests=["下棋"],
+            health_conditions=["高血压"],
+        )
+    )
+    return (
+        MemoryConsolidation(episodic=ep, semantic=sm, profile=pf, llm_client=mock_llm),
+        ep,
+        sm,
+        pf,
+        mock_llm,
+    )
 
 
 @pytest.fixture
@@ -94,21 +175,33 @@ def consolidation_no_llm(db_path, tmp_path):
     """无 LLM 的 consolidation 实例 (规则回退)"""
     loop = asyncio.get_event_loop()
     ep = EpisodicMemory(db_path=db_path)
-    sm = SemanticMemory(persist_dir=str(tmp_path / "chroma"))
+    sm = SemanticMemory(
+        persist_dir=str(tmp_path / "chroma"), embedding_function=_test_ef
+    )
     pf = LongTermProfile(db_path=db_path)
     loop.run_until_complete(ep.initialize())
     loop.run_until_complete(sm.initialize())
     loop.run_until_complete(pf.initialize())
-    loop.run_until_complete(pf.add_member(
-        person_id="grandpa", name="王爷爷", nickname="爷爷",
-        role="elder", age=75, interests=["下棋"],
-    ))
-    return MemoryConsolidation(
-        episodic=ep, semantic=sm, profile=pf, llm_client=None
-    ), ep, sm, pf
+    loop.run_until_complete(
+        pf.add_member(
+            person_id="grandpa",
+            name="王爷爷",
+            nickname="爷爷",
+            role="elder",
+            age=75,
+            interests=["下棋"],
+        )
+    )
+    return (
+        MemoryConsolidation(episodic=ep, semantic=sm, profile=pf, llm_client=None),
+        ep,
+        sm,
+        pf,
+    )
 
 
 # ============ 情景记忆测试 ============
+
 
 class TestEpisodicMemory:
     def test_add_and_retrieve(self, episodic):
@@ -140,25 +233,26 @@ class TestEpisodicMemory:
         loop.run_until_complete(
             episodic.add_episode("grandpa", "爷爷说想下棋", "happy", 0.4)
         )
-        results = loop.run_until_complete(
-            episodic.search("grandpa", "下棋")
-        )
+        results = loop.run_until_complete(episodic.search("grandpa", "下棋"))
         assert len(results) == 1
 
 
 # ============ 长期档案测试 ============
 
+
 class TestLongTermProfile:
     def test_add_and_get(self, profile):
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(profile.add_member(
-            person_id="grandpa",
-            name="王爷爷",
-            nickname="爷爷",
-            role="elder",
-            age=75,
-            interests=["下棋"],
-        ))
+        loop.run_until_complete(
+            profile.add_member(
+                person_id="grandpa",
+                name="王爷爷",
+                nickname="爷爷",
+                role="elder",
+                age=75,
+                interests=["下棋"],
+            )
+        )
         p = loop.run_until_complete(profile.get_profile("grandpa"))
         assert p is not None
         assert p["name"] == "王爷爷"
@@ -166,30 +260,29 @@ class TestLongTermProfile:
 
     def test_update_interests(self, profile):
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(profile.add_member(
-            person_id="grandpa", name="王爷爷", interests=["下棋"]
-        ))
         loop.run_until_complete(
-            profile.update_interests("grandpa", ["种花"])
+            profile.add_member(person_id="grandpa", name="王爷爷", interests=["下棋"])
         )
+        loop.run_until_complete(profile.update_interests("grandpa", ["种花"]))
         p = loop.run_until_complete(profile.get_profile("grandpa"))
         assert "下棋" in p["interests"]
         assert "种花" in p["interests"]
 
     def test_update_health(self, profile):
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(profile.add_member(
-            person_id="grandpa", name="王爷爷", health_conditions=["高血压"]
-        ))
         loop.run_until_complete(
-            profile.update_health("grandpa", ["膝盖不好"])
+            profile.add_member(
+                person_id="grandpa", name="王爷爷", health_conditions=["高血压"]
+            )
         )
+        loop.run_until_complete(profile.update_health("grandpa", ["膝盖不好"]))
         p = loop.run_until_complete(profile.get_profile("grandpa"))
         assert "高血压" in p["health_conditions"]
         assert "膝盖不好" in p["health_conditions"]
 
 
 # ============ 工作记忆测试 ============
+
 
 class TestWorkingMemory:
     def test_session_lifecycle(self):
@@ -221,7 +314,6 @@ class TestWorkingMemory:
 
     def test_face_result_expiry(self):
         """人脸结果超时后不应被融合使用"""
-        import time
         wm = WorkingMemory()
         wm.start_session("s1")
         wm.update_face_result("s1", {"person_id": "grandpa", "score": 0.9})
@@ -235,15 +327,12 @@ class TestWorkingMemory:
 
 # ============ 语义记忆测试 ============
 
+
 class TestSemanticMemory:
     def test_add_and_search(self, semantic):
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(
-            semantic.add("grandpa", "爷爷今天说膝盖有点疼")
-        )
-        loop.run_until_complete(
-            semantic.add("grandpa", "爷爷和小明下了一盘棋")
-        )
+        loop.run_until_complete(semantic.add("grandpa", "爷爷今天说膝盖有点疼"))
+        loop.run_until_complete(semantic.add("grandpa", "爷爷和小明下了一盘棋"))
         results = loop.run_until_complete(
             semantic.search("膝盖疼痛", person_id="grandpa", top_k=2)
         )
@@ -253,19 +342,13 @@ class TestSemanticMemory:
 
     def test_search_empty(self, semantic):
         loop = asyncio.get_event_loop()
-        results = loop.run_until_complete(
-            semantic.search("完全不相关的查询", top_k=5)
-        )
+        results = loop.run_until_complete(semantic.search("完全不相关的查询", top_k=5))
         assert isinstance(results, list)
 
     def test_person_filter(self, semantic):
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(
-            semantic.add("grandpa", "爷爷喜欢下棋")
-        )
-        loop.run_until_complete(
-            semantic.add("xiaoming", "小明喜欢踢足球")
-        )
+        loop.run_until_complete(semantic.add("grandpa", "爷爷喜欢下棋"))
+        loop.run_until_complete(semantic.add("xiaoming", "小明喜欢踢足球"))
         results = loop.run_until_complete(
             semantic.search("喜欢什么", person_id="grandpa", top_k=5)
         )
@@ -274,6 +357,7 @@ class TestSemanticMemory:
 
 
 # ============ 记忆沉淀测试 (LLM) ============
+
 
 class TestConsolidationWithLLM:
     """测试通过 LLM 驱动的记忆沉淀"""
@@ -293,10 +377,12 @@ class TestConsolidationWithLLM:
         cons, ep, sm, pf, mock_llm = consolidation_with_llm
         loop = asyncio.get_event_loop()
 
-        session = self._make_session_data([
-            {"person_id": "grandpa", "text": "我膝盖又疼了", "role": "user"},
-            {"person_id": "bot", "text": "爷爷您注意休息", "role": "assistant"},
-        ])
+        session = self._make_session_data(
+            [
+                {"person_id": "grandpa", "text": "我膝盖又疼了", "role": "user"},
+                {"person_id": "bot", "text": "爷爷您注意休息", "role": "assistant"},
+            ]
+        )
 
         loop.run_until_complete(cons.consolidate(session))
 
@@ -309,10 +395,12 @@ class TestConsolidationWithLLM:
         cons, ep, sm, pf, mock_llm = consolidation_with_llm
         loop = asyncio.get_event_loop()
 
-        session = self._make_session_data([
-            {"person_id": "grandpa", "text": "我膝盖又疼了", "role": "user"},
-            {"person_id": "bot", "text": "爷爷您注意休息", "role": "assistant"},
-        ])
+        session = self._make_session_data(
+            [
+                {"person_id": "grandpa", "text": "我膝盖又疼了", "role": "user"},
+                {"person_id": "bot", "text": "爷爷您注意休息", "role": "assistant"},
+            ]
+        )
 
         loop.run_until_complete(cons.consolidate(session))
 
@@ -327,16 +415,16 @@ class TestConsolidationWithLLM:
         cons, ep, sm, pf, mock_llm = consolidation_with_llm
         loop = asyncio.get_event_loop()
 
-        session = self._make_session_data([
-            {"person_id": "grandpa", "text": "我膝盖又疼了", "role": "user"},
-        ])
+        session = self._make_session_data(
+            [
+                {"person_id": "grandpa", "text": "我膝盖又疼了", "role": "user"},
+            ]
+        )
 
         loop.run_until_complete(cons.consolidate(session))
 
         # 检索应该能找到
-        results = loop.run_until_complete(
-            sm.search("膝盖疼", person_id="grandpa")
-        )
+        results = loop.run_until_complete(sm.search("膝盖疼", person_id="grandpa"))
         assert len(results) > 0
 
     def test_profile_auto_update(self, consolidation_with_llm):
@@ -344,9 +432,11 @@ class TestConsolidationWithLLM:
         cons, ep, sm, pf, mock_llm = consolidation_with_llm
         loop = asyncio.get_event_loop()
 
-        session = self._make_session_data([
-            {"person_id": "grandpa", "text": "我膝盖又疼了", "role": "user"},
-        ])
+        session = self._make_session_data(
+            [
+                {"person_id": "grandpa", "text": "我膝盖又疼了", "role": "user"},
+            ]
+        )
 
         loop.run_until_complete(cons.consolidate(session))
 
@@ -359,10 +449,12 @@ class TestConsolidationWithLLM:
         cons, ep, sm, pf, mock_llm = consolidation_with_llm
         loop = asyncio.get_event_loop()
 
-        session = self._make_session_data([
-            {"person_id": "unknown", "text": "你好", "role": "user"},
-            {"person_id": "bot", "text": "你好!", "role": "assistant"},
-        ])
+        session = self._make_session_data(
+            [
+                {"person_id": "unknown", "text": "你好", "role": "user"},
+                {"person_id": "bot", "text": "你好!", "role": "assistant"},
+            ]
+        )
         # 手动设置 person_ids 包含 unknown 和 bot
         session["person_ids"] = ["unknown", "bot"]
 
@@ -371,6 +463,7 @@ class TestConsolidationWithLLM:
 
 
 # ============ 记忆沉淀测试 (规则回退) ============
+
 
 class TestConsolidationRuleFallback:
     """测试无 LLM 时的规则回退"""
@@ -388,9 +481,11 @@ class TestConsolidationRuleFallback:
         cons, ep, sm, pf = consolidation_no_llm
         loop = asyncio.get_event_loop()
 
-        session = self._make_session_data([
-            {"person_id": "grandpa", "text": "我头好晕，不舒服", "role": "user"},
-        ])
+        session = self._make_session_data(
+            [
+                {"person_id": "grandpa", "text": "我头好晕，不舒服", "role": "user"},
+            ]
+        )
 
         loop.run_until_complete(cons.consolidate(session))
 
@@ -404,9 +499,11 @@ class TestConsolidationRuleFallback:
         cons, ep, sm, pf = consolidation_no_llm
         loop = asyncio.get_event_loop()
 
-        session = self._make_session_data([
-            {"person_id": "grandpa", "text": "今天天气不错", "role": "user"},
-        ])
+        session = self._make_session_data(
+            [
+                {"person_id": "grandpa", "text": "今天天气不错", "role": "user"},
+            ]
+        )
 
         loop.run_until_complete(cons.consolidate(session))
 
@@ -419,9 +516,11 @@ class TestConsolidationRuleFallback:
         cons, ep, sm, pf = consolidation_no_llm
         loop = asyncio.get_event_loop()
 
-        session = self._make_session_data([
-            {"person_id": "grandpa", "text": "我最近迷上钓鱼了", "role": "user"},
-        ])
+        session = self._make_session_data(
+            [
+                {"person_id": "grandpa", "text": "我最近迷上钓鱼了", "role": "user"},
+            ]
+        )
 
         loop.run_until_complete(cons.consolidate(session))
 
@@ -431,18 +530,25 @@ class TestConsolidationRuleFallback:
     def test_llm_failure_falls_back_to_rules(self):
         """LLM 返回无效内容时应回退到规则"""
         loop = asyncio.get_event_loop()
-        import tempfile, os
+        import os
+        import tempfile
+
         tmp = tempfile.mkdtemp()
 
         ep = EpisodicMemory(db_path=os.path.join(tmp, "test.db"))
-        sm = SemanticMemory(persist_dir=os.path.join(tmp, "chroma"))
+        sm = SemanticMemory(
+            persist_dir=os.path.join(tmp, "chroma"), embedding_function=_test_ef
+        )
         pf = LongTermProfile(db_path=os.path.join(tmp, "test.db"))
         loop.run_until_complete(ep.initialize())
         loop.run_until_complete(sm.initialize())
         loop.run_until_complete(pf.initialize())
-        loop.run_until_complete(pf.add_member(
-            person_id="grandpa", name="王爷爷",
-        ))
+        loop.run_until_complete(
+            pf.add_member(
+                person_id="grandpa",
+                name="王爷爷",
+            )
+        )
 
         # LLM 返回垃圾
         bad_llm = MockLLMClient(response=None)
@@ -467,6 +573,7 @@ class TestConsolidationRuleFallback:
 
 
 # ============ 多轮记忆召回集成测试 ============
+
 
 class TestMultiTurnRecall:
     """测试多轮对话的记忆存储与召回"""

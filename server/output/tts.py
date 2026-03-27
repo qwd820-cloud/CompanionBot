@@ -25,9 +25,7 @@ class TTSEngine:
     def __init__(self, voice: str = DEFAULT_VOICE):
         self.voice = voice
 
-    async def synthesize(
-        self, text: str, emotion: str = "neutral"
-    ) -> bytes | None:
+    async def synthesize(self, text: str, emotion: str = "neutral") -> bytes | None:
         """
         文字转语音。
         返回: MP3/WAV 音频字节，或 None
@@ -39,6 +37,7 @@ class TTSEngine:
 
         try:
             import edge_tts
+
             communicate = edge_tts.Communicate(
                 text=text,
                 voice=self.voice,
@@ -54,8 +53,7 @@ class TTSEngine:
             audio_data = audio_buffer.getvalue()
             if audio_data:
                 logger.debug(
-                    f"TTS 合成完成: {len(audio_data)} bytes, "
-                    f"emotion={emotion}"
+                    f"TTS 合成完成: {len(audio_data)} bytes, emotion={emotion}"
                 )
                 return audio_data
 
@@ -68,6 +66,7 @@ class TTSEngine:
         """列出可用的中文语音"""
         try:
             import edge_tts
+
             voices = await edge_tts.list_voices()
             return [
                 {"name": v["Name"], "gender": v["Gender"]}

@@ -28,6 +28,7 @@ class ASRProcessor:
         """加载 FunASR Paraformer"""
         try:
             from funasr import AutoModel
+
             self.model = AutoModel(
                 model="paraformer-zh",
                 vad_model="fsmn-vad",
@@ -44,6 +45,7 @@ class ASRProcessor:
         """加载 Whisper"""
         try:
             import whisper
+
             self.model = whisper.load_model(self.model_size, device="cuda")
             self.backend = "whisper"
             logger.info(f"Whisper {self.model_size} 加载成功")

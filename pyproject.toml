@@ -1,0 +1,69 @@
+[project]
+name = "companion-bot"
+version = "0.1.0"
+description = "家庭陪伴机器人大脑系统"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+timeout = 60
+markers = [
+    "slow: 需要加载模型或网络访问的慢速测试",
+    "gpu: 需要 GPU 的测试",
+    "integration: 集成测试（需要服务运行）",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:speechbrain.*",
+    "ignore::DeprecationWarning:torchaudio.*",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["server", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # bugbear — 常见 bug 模式
+    "S",    # bandit — 安全检查
+    "UP",   # pyupgrade
+    "SIM",  # simplify
+    "RUF",  # ruff 专属规则
+]
+ignore = [
+    "E501",   # 行长度由 formatter 管理
+    "S101",   # assert 在测试中允许
+    "S603",   # subprocess 调用在脚本中允许
+    "S607",   # partial path in subprocess
+    "B008",   # FastAPI Depends() 需要
+    "RUF001", # 中文项目，全角字符在字符串中正常
+    "RUF002", # 中文项目，全角字符在文档字符串中正常
+    "RUF003", # 中文项目，全角字符在注释中正常
+    "RUF012", # mutable class variable — dataclass 场景多
+    "RUF005", # list concatenation vs unpacking — 风格偏好，不强制
+    "RUF006", # asyncio.create_task 引用 — fire-and-forget 是有意设计
+    "RUF059", # unpacked unused var — torch.hub.load 返回值结构固定
+    "S104",   # binding to all interfaces — 开发/部署环境需要
+    "S110",   # try-except-pass — WebSocket 接收循环中合理使用
+    "S310",   # urllib.request.urlopen — 内部测试脚本
+    "S324",   # md5 — 仅用于测试 embedding hash，非安全用途
+    "UP042",  # StrEnum — 保持 Python 3.10 兼容性
+    "E402",   # module level import — 条件导入场景需要
+    "SIM116", # dict lookup vs if-elif — 可读性优先
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S106", "B011"]
+"scripts/**" = ["S101", "S603", "S607"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["server"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
