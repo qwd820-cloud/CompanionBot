@@ -55,6 +55,7 @@ from server.perception.vad import VADProcessor
 from server.personality.engine import PersonalityEngine
 from server.personality.intervention import InterventionDecider
 from server.personality.llm_client import LLMClient
+from server.personality.proactive import ProactiveScheduler
 from server.personality.prompt_builder import PromptBuilder
 from server.safety.alert_manager import AlertManager
 from server.safety.anomaly_detector import AnomalyDetector
@@ -151,6 +152,9 @@ async def lifespan(app: FastAPI):
     app.state.anomaly_detector = AnomalyDetector()
     app.state.alert_manager = AlertManager(notification=app.state.notification)
 
+    # 主动行为调度器
+    app.state.proactive = ProactiveScheduler()
+
     await asyncio.gather(
         app.state.vad.initialize(),
         app.state.speaker_id.initialize(),
@@ -166,9 +170,32 @@ async def lifespan(app: FastAPI):
     if not llm_ok:
         logger.warning("LLM 引擎尚未就绪，对话功能暂不可用。引擎启动后将自动恢复。")
 
+    # 启动主动行为调度器
+    async def _proactive_send(person_id, message, action_type):
+        """主动行为的消息发送回调"""
+        # 向所有活跃连接广播主动消息
+        import contextlib
+
+        from server.ws_handler import manager
+
+        for _cid, ws in manager.active_connections.items():
+            with contextlib.suppress(Exception):
+                await ws.send_json(
+                    {
+                        "type": "proactive",
+                        "person_id": person_id,
+                        "text": message,
+                        "action_type": action_type,
+                    }
+                )
+
+    app.state.proactive.set_send_callback(_proactive_send)
+    await app.state.proactive.start()
+
     logger.info("CompanionBot 所有子系统初始化完成")
     yield
 
+    await app.state.proactive.stop()
     logger.info("CompanionBot 关闭中...")
 
 

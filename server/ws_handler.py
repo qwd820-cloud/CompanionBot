@@ -385,6 +385,17 @@ async def _handle_text_input(app, client_id: str, msg: dict):
     if not text:
         return
 
+    # 更新主动行为调度器的活动时间
+    if hasattr(app.state, "proactive"):
+        app.state.proactive.update_activity(person_id)
+
+    # 检查音频文本异常 (安全检测)
+    anomaly = await app.state.anomaly_detector.check_audio(
+        text=text, person_id=person_id
+    )
+    if anomaly:
+        await app.state.alert_manager.handle_anomaly(anomaly, client_id, manager)
+
     app.state.working_memory.add_turn(
         session_id=client_id,
         person_id=person_id,
