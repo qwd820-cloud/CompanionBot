@@ -1,10 +1,11 @@
-"""CompanionBot — FastAPI 入口"""
+"""CompanionBot — FastAPI 入口 (多 Bot 实例架构)"""
 
 import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 
 # 加载 .env 文件 (deploy/.env 或项目根 .env)
@@ -20,7 +21,6 @@ def _load_env():
                     key, _, value = line.partition("=")
                     os.environ[key.strip()] = value.strip()
             break
-    # 清理代理设置，避免干扰本地和云端 LLM 连接
     for proxy_var in [
         "ALL_PROXY",
         "all_proxy",
@@ -36,29 +36,19 @@ def _load_env():
 
 _load_env()
 
+import json
 import yaml
 from fastapi import FastAPI
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from server.memory.consolidation import MemoryConsolidation
-from server.memory.episodic_memory import EpisodicMemory
-from server.memory.long_term_profile import LongTermProfile
-from server.memory.semantic_memory import SemanticMemory
-from server.memory.working_memory import WorkingMemory
-from server.output.notification import NotificationManager
-from server.output.tts import TTSEngine
+from server.bot_manager import BotManager
 from server.perception.asr import ASRProcessor
 from server.perception.face_id import FaceIdentifier
 from server.perception.identity_fusion import IdentityFusion
 from server.perception.speaker_id import SpeakerIdentifier
 from server.perception.vad import VADProcessor
-from server.personality.engine import PersonalityEngine
-from server.personality.intervention import InterventionDecider
 from server.personality.llm_client import LLMClient
-from server.personality.proactive import ProactiveScheduler
-from server.personality.prompt_builder import PromptBuilder
-from server.safety.alert_manager import AlertManager
-from server.safety.anomaly_detector import AnomalyDetector
 from server.ws_handler import router as ws_router
 
 logger = logging.getLogger("companion_bot")
@@ -74,19 +64,10 @@ def load_config(name: str) -> dict:
 
 
 def _configure_gpu_memory():
-    """
-    配置 GPU 内存分配策略 — DGX Spark UMA 适配。
-
-    UMA 架构下 GPU 和 CPU 共享 128GB 内存，感知层模型 (SpeechBrain,
-    InsightFace, FunASR) 与 LLM 推理引擎 (SGLang) 需要协调内存使用。
-    限制本进程的 GPU 内存占比，避免与 SGLang 争抢。
-    """
     try:
         import torch
 
         if torch.cuda.is_available():
-            # 限制本进程最多使用 GPU 可见内存的 15%
-            # 感知层模型总共约需 4~6GB，128GB 的 15% ≈ 19GB 足够
             fraction = float(os.environ.get("TORCH_CUDA_ALLOC_FRACTION", "0.15"))
             torch.cuda.set_per_process_memory_fraction(fraction)
             device = torch.cuda.get_device_name(0)
@@ -103,106 +84,53 @@ async def lifespan(app: FastAPI):
     _configure_gpu_memory()
 
     personality_cfg = load_config("personality.yaml")
-    _family_cfg = load_config("family_members.yaml")
     notification_cfg = load_config("notification_contacts.yaml")
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    (DATA_DIR / "chroma").mkdir(exist_ok=True)
     (DATA_DIR / "voiceprints").mkdir(exist_ok=True)
 
-    db_path = str(DATA_DIR / "companion.db")
-
-    # 感知层
-    app.state.vad = VADProcessor()
-    app.state.speaker_id = SpeakerIdentifier(
-        voiceprint_dir=str(DATA_DIR / "voiceprints")
-    )
-    app.state.face_id = FaceIdentifier()
-    app.state.asr = ASRProcessor()
-    app.state.identity_fusion = IdentityFusion()
-
-    # 记忆层
-    app.state.episodic_memory = EpisodicMemory(db_path=db_path)
-    app.state.semantic_memory = SemanticMemory(persist_dir=str(DATA_DIR / "chroma"))
-    app.state.long_term_profile = LongTermProfile(db_path=db_path)
-    app.state.working_memory = WorkingMemory()
-    app.state.llm_client = LLMClient()
-    app.state.consolidation = MemoryConsolidation(
-        episodic=app.state.episodic_memory,
-        semantic=app.state.semantic_memory,
-        profile=app.state.long_term_profile,
-        llm_client=app.state.llm_client,
-    )
-
-    # 人格层
-    app.state.personality = PersonalityEngine(config=personality_cfg)
-    app.state.intervention = InterventionDecider()
-    app.state.prompt_builder = PromptBuilder(
-        personality=app.state.personality,
-        episodic=app.state.episodic_memory,
-        semantic=app.state.semantic_memory,
-        profile=app.state.long_term_profile,
-    )
-
-    # 输出层
-    app.state.tts = TTSEngine()
-    app.state.notification = NotificationManager(config=notification_cfg)
-
-    # 安全模块
-    app.state.anomaly_detector = AnomalyDetector()
-    app.state.alert_manager = AlertManager(notification=app.state.notification)
-
-    # 主动行为调度器
-    app.state.proactive = ProactiveScheduler()
+    # ===== 全局共享层 (感知 + LLM) =====
+    shared = SimpleNamespace()
+    shared.vad = VADProcessor()
+    shared.speaker_id = SpeakerIdentifier(voiceprint_dir=str(DATA_DIR / "voiceprints"))
+    shared.face_id = FaceIdentifier()
+    shared.asr = ASRProcessor()
+    shared.identity_fusion = IdentityFusion()
+    shared.llm_client = LLMClient()
 
     await asyncio.gather(
-        app.state.vad.initialize(),
-        app.state.speaker_id.initialize(),
-        app.state.face_id.initialize(),
-        app.state.asr.initialize(),
-        app.state.episodic_memory.initialize(),
-        app.state.semantic_memory.initialize(),
-        app.state.long_term_profile.initialize(),
+        shared.vad.initialize(),
+        shared.speaker_id.initialize(),
+        shared.face_id.initialize(),
+        shared.asr.initialize(),
     )
 
-    # LLM 引擎健康检查 (非阻塞，启动后可能还在加载模型)
-    llm_ok = await app.state.llm_client.check_health()
+    llm_ok = await shared.llm_client.check_health()
     if not llm_ok:
-        logger.warning("LLM 引擎尚未就绪，对话功能暂不可用。引擎启动后将自动恢复。")
+        logger.warning("LLM 引擎尚未就绪，对话功能暂不可用。")
 
-    # 启动主动行为调度器
-    async def _proactive_send(person_id, message, action_type):
-        """主动行为的消息发送回调"""
-        # 向所有活跃连接广播主动消息
-        import contextlib
+    app.state.shared = shared
 
-        from server.ws_handler import manager
+    # ===== Bot 实例管理器 =====
+    bot_manager = BotManager(DATA_DIR, shared)
+    await bot_manager.initialize(personality_cfg, notification_cfg)
+    app.state.bot_manager = bot_manager
 
-        for _cid, ws in manager.active_connections.items():
-            with contextlib.suppress(Exception):
-                await ws.send_json(
-                    {
-                        "type": "proactive",
-                        "person_id": person_id,
-                        "text": message,
-                        "action_type": action_type,
-                    }
-                )
+    # 保留配置引用 (创建新 bot 时需要)
+    app.state.personality_cfg = personality_cfg
+    app.state.notification_cfg = notification_cfg
 
-    app.state.proactive.set_send_callback(_proactive_send)
-    await app.state.proactive.start()
-
-    logger.info("CompanionBot 所有子系统初始化完成")
+    logger.info(f"CompanionBot 启动完成: {len(bot_manager.bots)} 个 bot 实例")
     yield
 
-    await app.state.proactive.stop()
+    await bot_manager.shutdown_all()
     logger.info("CompanionBot 关闭中...")
 
 
 app = FastAPI(
     title="CompanionBot",
-    description="家庭陪伴机器人大脑系统",
-    version="0.1.0",
+    description="家庭陪伴机器人大脑系统 (多实例)",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -217,56 +145,152 @@ app.add_middleware(
 app.include_router(ws_router)
 
 
+# ===== Health =====
 @app.get("/health")
 async def health_check():
-    """健康检查 — 返回各模块状态"""
+    shared = app.state.shared
     modules = {}
-
-    # 感知层
-    modules["vad"] = (
-        "loaded"
-        if getattr(app.state, "vad", None) and app.state.vad.model is not None
-        else "fallback"
-    )
+    modules["vad"] = "loaded" if shared.vad.model is not None else "fallback"
     modules["speaker_id"] = (
-        "loaded"
-        if getattr(app.state, "speaker_id", None)
-        and app.state.speaker_id.model is not None
-        else "fallback"
+        "loaded" if shared.speaker_id.model is not None else "fallback"
     )
-    modules["face_id"] = (
-        "loaded"
-        if getattr(app.state, "face_id", None) and app.state.face_id.model is not None
-        else "fallback"
-    )
-    modules["asr"] = (
-        "loaded"
-        if getattr(app.state, "asr", None) and app.state.asr.model is not None
-        else "not_loaded"
-    )
-
-    # 记忆层
-    modules["memory"] = (
-        "ok" if getattr(app.state, "working_memory", None) is not None else "not_loaded"
-    )
-
-    # 人格层
-    modules["personality"] = (
-        "ok" if getattr(app.state, "personality", None) is not None else "not_loaded"
-    )
-
-    # LLM
-    llm = getattr(app.state, "llm_client", None)
-    if llm:
-        if llm._local_available and llm._cloud_available:
-            modules["llm"] = "local+cloud"
-        elif llm._local_available:
-            modules["llm"] = "local"
-        elif llm._cloud_available:
-            modules["llm"] = "cloud"
-        else:
-            modules["llm"] = "unavailable"
+    modules["face_id"] = "loaded" if shared.face_id.model is not None else "fallback"
+    modules["asr"] = "loaded" if shared.asr.model is not None else "not_loaded"
+    llm = shared.llm_client
+    if llm._local_available and llm._cloud_available:
+        modules["llm"] = "local+cloud"
+    elif llm._local_available:
+        modules["llm"] = "local"
+    elif llm._cloud_available:
+        modules["llm"] = "cloud"
     else:
-        modules["llm"] = "not_loaded"
+        modules["llm"] = "unavailable"
 
-    return {"status": "ok", "service": "CompanionBot", "modules": modules}
+    bots = app.state.bot_manager.list_bots()
+    return {
+        "status": "ok",
+        "service": "CompanionBot",
+        "modules": modules,
+        "bots": len(bots),
+    }
+
+
+
+# ===== App Update API =====
+@app.get("/api/app/version")
+async def app_version():
+    version_file = Path(__file__).parent / "static" / "version.json"
+    if version_file.exists():
+        with open(version_file) as f:
+            info = json.load(f)
+        info["url"] = "/api/app/download"
+        return info
+    return {"version": "0.0.0", "version_code": 0, "url": "/api/app/download"}
+
+
+@app.get("/api/app/download")
+async def app_download():
+    apk_path = Path(__file__).parent / "static" / "companionbot.apk"
+    if apk_path.exists():
+        return FileResponse(apk_path, filename="companionbot.apk", media_type="application/vnd.android.package-archive")
+    return JSONResponse({"error": "APK not found"}, status_code=404)
+
+
+# ===== Bot 管理 API =====
+@app.get("/api/bots")
+async def list_bots():
+    return app.state.bot_manager.list_bots()
+
+
+@app.post("/api/bots")
+async def create_bot(body: dict):
+    bot_id = body.get("bot_id")
+    if not bot_id:
+        return {"error": "bot_id is required"}, 400
+    name = body.get("name", "天天")
+    overrides = body.get("personality_overrides", {})
+    try:
+        instance = await app.state.bot_manager.create_bot(
+            bot_id=bot_id, name=name, personality_overrides=overrides
+        )
+        return instance.to_dict()
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/bots/{bot_id}")
+async def get_bot(bot_id: str):
+    instance = await app.state.bot_manager.get_bot(bot_id)
+    if not instance:
+        return {"error": f"Bot [{bot_id}] 不存在"}
+    return instance.to_dict()
+
+
+@app.put("/api/bots/{bot_id}")
+async def update_bot(bot_id: str, body: dict):
+    try:
+        instance = await app.state.bot_manager.update_bot(
+            bot_id=bot_id,
+            name=body.get("name"),
+            personality_overrides=body.get("personality_overrides"),
+        )
+        return instance.to_dict()
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+@app.delete("/api/bots/{bot_id}")
+async def delete_bot(bot_id: str):
+    ok = await app.state.bot_manager.delete_bot(bot_id)
+    return {"deleted": ok}
+
+
+# ===== 成员管理 API (per bot) =====
+@app.get("/api/bots/{bot_id}/members")
+async def list_members(bot_id: str):
+    instance = await app.state.bot_manager.get_bot(bot_id)
+    if not instance:
+        return {"error": f"Bot [{bot_id}] 不存在"}
+    return await instance.long_term_profile.get_all_members()
+
+
+@app.get("/api/bots/{bot_id}/members/{person_id}")
+async def get_member(bot_id: str, person_id: str):
+    instance = await app.state.bot_manager.get_bot(bot_id)
+    if not instance:
+        return {"error": f"Bot [{bot_id}] 不存在"}
+    profile = await instance.long_term_profile.get_profile(person_id)
+    if not profile:
+        return {"error": f"成员 [{person_id}] 不存在"}
+    return profile
+
+
+@app.put("/api/bots/{bot_id}/members/{person_id}")
+async def update_member(bot_id: str, person_id: str, body: dict):
+    instance = await app.state.bot_manager.get_bot(bot_id)
+    if not instance:
+        return {"error": f"Bot [{bot_id}] 不存在"}
+
+    profile = await instance.long_term_profile.get_profile(person_id)
+    if not profile:
+        return {"error": f"成员 [{person_id}] 不存在"}
+
+    # 更新自定义提示词
+    if "custom_prompt" in body:
+        await instance.long_term_profile.update_custom_prompt(
+            person_id, body["custom_prompt"]
+        )
+
+    # 更新其他字段
+    if "interests" in body:
+        await instance.long_term_profile.update_interests(person_id, body["interests"])
+    if "health_conditions" in body:
+        await instance.long_term_profile.update_health(
+            person_id, body["health_conditions"]
+        )
+    if "recent_concerns" in body:
+        await instance.long_term_profile.update_concerns(
+            person_id, body["recent_concerns"]
+        )
+
+    return await instance.long_term_profile.get_profile(person_id)

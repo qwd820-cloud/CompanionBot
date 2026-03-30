@@ -8,8 +8,8 @@ logger = logging.getLogger("companion_bot.tts")
 
 # 情绪 → TTS 参数映射
 EMOTION_TTS_PARAMS = {
-    "neutral": {"rate": "+0%", "pitch": "+0Hz"},
-    "happy": {"rate": "+10%", "pitch": "+20Hz"},
+    "neutral": {"rate": "+8%", "pitch": "+5Hz"},
+    "happy": {"rate": "+15%", "pitch": "+10Hz"},
     "concerned": {"rate": "-10%", "pitch": "-10Hz"},
     "tired": {"rate": "-15%", "pitch": "-5Hz"},
     "curious": {"rate": "+5%", "pitch": "+10Hz"},
@@ -26,7 +26,7 @@ EMOTION_PYTTSX3_PARAMS = {
     "slightly_annoyed": {"rate_factor": 1.0, "volume": 0.9},
 }
 
-DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural"
+DEFAULT_VOICE = "zh-CN-XiaoyiNeural"
 
 
 class TTSEngine:

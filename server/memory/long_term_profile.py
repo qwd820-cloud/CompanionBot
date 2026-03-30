@@ -31,12 +31,21 @@ class LongTermProfile:
                 health_conditions TEXT DEFAULT '[]',
                 communication_preferences TEXT DEFAULT '{}',
                 recent_concerns TEXT DEFAULT '[]',
+                custom_prompt TEXT DEFAULT '',
                 voiceprint_enrolled INTEGER DEFAULT 0,
                 face_enrolled INTEGER DEFAULT 0,
                 created_at REAL,
                 updated_at REAL
             )
         """)
+        # 兼容旧数据库: 如果表已存在但缺少 custom_prompt 列，自动添加
+        try:
+            self.conn.execute(
+                "ALTER TABLE family_profiles ADD COLUMN custom_prompt TEXT DEFAULT ''"
+            )
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass  # 列已存在
         self.conn.commit()
         logger.info("长期档案初始化完成")
 
@@ -87,18 +96,50 @@ class LongTermProfile:
         if row is None:
             return None
 
+        d = dict(row)
         return {
-            "person_id": row["person_id"],
-            "name": row["name"],
-            "nickname": row["nickname"],
-            "role": row["role"],
-            "age": row["age"],
-            "relationship": row["relationship"],
-            "interests": json.loads(row["interests"]),
-            "health_conditions": json.loads(row["health_conditions"]),
-            "communication_preferences": json.loads(row["communication_preferences"]),
-            "recent_concerns": json.loads(row["recent_concerns"]),
+            "person_id": d["person_id"],
+            "name": d["name"],
+            "nickname": d["nickname"],
+            "role": d["role"],
+            "age": d["age"],
+            "relationship": d["relationship"],
+            "interests": json.loads(d["interests"]),
+            "health_conditions": json.loads(d["health_conditions"]),
+            "communication_preferences": json.loads(d["communication_preferences"]),
+            "recent_concerns": json.loads(d["recent_concerns"]),
+            "custom_prompt": d.get("custom_prompt", ""),
         }
+
+    async def update_member(self, person_id: str, **fields) -> bool:
+        """更新成员基本信息，只更新提供的字段
+
+        支持的字段: name, nickname, role, age, relationship
+        返回 True 表示已更新，False 表示未找到成员
+        """
+        allowed = {"name", "nickname", "role", "age", "relationship"}
+        updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+        if not updates:
+            logger.warning(f"update_member: 无有效字段可更新 ({person_id})")
+            return False
+
+        set_clauses = [f"{col} = ?" for col in updates]
+        set_clauses.append("updated_at = ?")
+        values = list(updates.values())
+        values.append(time.time())
+        values.append(person_id)
+
+        sql = f"UPDATE family_profiles SET {', '.join(set_clauses)} WHERE person_id = ?"
+        cursor = self.conn.execute(sql, values)
+        self.conn.commit()
+
+        if cursor.rowcount > 0:
+            logger.info(f"成员信息已更新: {person_id} (字段: {list(updates.keys())})")
+            return True
+        else:
+            logger.warning(f"更新失败，成员不存在: {person_id}")
+            return False
+
 
     async def update_interests(self, person_id: str, new_interests: list[str]):
         """更新兴趣爱好 (合并)"""
@@ -139,6 +180,31 @@ class LongTermProfile:
             (json.dumps(concerns, ensure_ascii=False), time.time(), person_id),
         )
         self.conn.commit()
+
+    async def update_custom_prompt(self, person_id: str, custom_prompt: str):
+        """更新成员的自定义提示词"""
+        self.conn.execute(
+            """UPDATE family_profiles
+               SET custom_prompt = ?, updated_at = ?
+               WHERE person_id = ?""",
+            (custom_prompt, time.time(), person_id),
+        )
+        self.conn.commit()
+        logger.info(f"更新自定义提示词: {person_id} ({len(custom_prompt)} 字)")
+
+    async def delete_member(self, person_id: str) -> bool:
+        """删除家庭成员，返回 True 表示已删除，False 表示未找到"""
+        cursor = self.conn.execute(
+            "DELETE FROM family_profiles WHERE person_id = ?",
+            (person_id,),
+        )
+        self.conn.commit()
+        deleted = cursor.rowcount > 0
+        if deleted:
+            logger.info(f"成员已删除: {person_id}")
+        else:
+            logger.warning(f"删除失败，成员不存在: {person_id}")
+        return deleted
 
     async def get_all_members(self) -> list[dict]:
         """获取所有成员列表"""

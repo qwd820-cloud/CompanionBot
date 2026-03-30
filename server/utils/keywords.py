@@ -118,7 +118,11 @@ CURIOUS_KEYWORDS = [
 ]
 
 # 唤醒词
-WAKE_WORDS = ["小伴", "xiaoban", "机器人"]
+WAKE_WORDS = ["天天你好", "天天", "小伴", "xiaoban", "机器人"]
+
+
+# 告别词 (退出 ACTIVE 模式)
+FAREWELL_WORDS = ["再见", "拜拜", "不聊了", "下次再聊"]
 
 # 机器人名字
 BOT_NAME = "小伴"

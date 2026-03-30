@@ -1,13 +1,22 @@
-"""WebSocket 处理器 — 音频流/视频帧的实时通信"""
+"""WebSocket 处理器 — 多 Bot 实例架构
+
+路由: /ws/{bot_id}/{client_id}
+感知层 (shared): VAD, ASR, SpeechBrain, InsightFace — 全局共享
+Bot 实例 (bot): 记忆, 人格, 安全, TTS — 每个 bot 独立
+"""
 
 import asyncio
 import base64
 import json
 import logging
+import os
 import struct
+import time
 from enum import IntEnum
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from server.utils.keywords import WAKE_WORDS, FAREWELL_WORDS
 
 logger = logging.getLogger("companion_bot.ws")
 
@@ -15,29 +24,29 @@ router = APIRouter()
 
 
 class MessageType(IntEnum):
-    """WebSocket 消息类型"""
-
-    AUDIO = 1  # 音频数据 (16kHz PCM)
-    VIDEO = 2  # 视频帧 (JPEG)
-    TEXT = 3  # 文本消息 (JSON)
-    TTS_AUDIO = 4  # TTS 回放音频
-    COMMAND = 5  # 控制指令
-    NOTIFICATION = 6  # 通知指令 (发短信等)
+    AUDIO = 1
+    VIDEO = 2
+    TEXT = 3
+    TTS_AUDIO = 4
+    COMMAND = 5
+    NOTIFICATION = 6
 
 
 class ConnectionManager:
-    """管理所有活跃的 WebSocket 连接"""
-
     def __init__(self):
         self.active_connections: dict[str, WebSocket] = {}
+        # client_id → bot_id 映射
+        self.client_bot_map: dict[str, str] = {}
 
-    async def connect(self, client_id: str, websocket: WebSocket):
+    async def connect(self, client_id: str, bot_id: str, websocket: WebSocket):
         await websocket.accept()
         self.active_connections[client_id] = websocket
-        logger.info(f"客户端连接: {client_id}")
+        self.client_bot_map[client_id] = bot_id
+        logger.info(f"客户端连接: {client_id} → bot [{bot_id}]")
 
     def disconnect(self, client_id: str):
         self.active_connections.pop(client_id, None)
+        self.client_bot_map.pop(client_id, None)
         logger.info(f"客户端断开: {client_id}")
 
     async def send_tts_audio(self, client_id: str, audio_data: bytes):
@@ -63,55 +72,131 @@ class ConnectionManager:
                 }
             )
 
+    def get_clients_for_bot(self, bot_id: str) -> list[str]:
+        """获取某个 bot 下的所有活跃 client_id"""
+        return [cid for cid, bid in self.client_bot_map.items() if bid == bot_id]
+
 
 manager = ConnectionManager()
 
 
-@router.websocket("/ws/{client_id}")
-async def websocket_endpoint(websocket: WebSocket, client_id: str):
-    """主 WebSocket 端点，处理音频流和视频帧"""
+# ===== 新路径: /ws/{bot_id}/{client_id} =====
+@router.websocket("/ws/{bot_id}/{client_id}")
+async def websocket_endpoint(websocket: WebSocket, bot_id: str, client_id: str):
+    """多实例 WebSocket 端点"""
     app = websocket.app
-    await manager.connect(client_id, websocket)
+    bot = await app.state.bot_manager.get_or_default(bot_id)
+    if not bot:
+        await websocket.close(code=4004, reason=f"Bot [{bot_id}] not found")
+        return
 
-    # 为此连接创建工作记忆会话
-    app.state.working_memory.start_session(client_id)
+    shared = app.state.shared
+    await manager.connect(client_id, bot_id, websocket)
+    bot.working_memory.start_session(client_id)
+
+    # Reset VAD for fresh connection
+    try:
+        shared.vad.reset()
+    except Exception:
+        pass
+
+    # 只对主客户端自动问候，管理连接不触发
+    if client_id.startswith("android_client"):
+        await _auto_greet(shared, bot, client_id)
 
     try:
         while True:
             data = await websocket.receive()
-
             if "bytes" in data:
-                await _handle_binary(app, client_id, data["bytes"])
+                await _handle_binary(shared, bot, client_id, data["bytes"])
             elif "text" in data:
-                await _handle_text(app, client_id, data["text"])
+                await _handle_text(shared, bot, client_id, data["text"])
     except WebSocketDisconnect:
         logger.info(f"客户端 {client_id} 正常断开")
     except Exception as e:
         logger.error(f"WebSocket 错误 ({client_id}): {e}")
     finally:
-        # 对话结束，触发记忆沉淀
-        session_data = app.state.working_memory.end_session(client_id)
+        session_data = bot.working_memory.end_session(client_id)
         if session_data and session_data.get("turns"):
-            asyncio.create_task(app.state.consolidation.consolidate(session_data))
+            try:
+                await bot.consolidation.consolidate(session_data)
+            except Exception as e:
+                print(f"[ERROR] 记忆沉淀失败: {e}")
         manager.disconnect(client_id)
 
 
-async def _handle_binary(app, client_id: str, raw: bytes):
-    """处理二进制消息 (音频/视频)"""
+# ===== 兼容旧路径: /ws/{client_id} → 使用 default bot =====
+@router.websocket("/ws/{client_id}")
+async def websocket_endpoint_legacy(websocket: WebSocket, client_id: str):
+    """兼容旧客户端 — 自动使用 default bot"""
+    await websocket_endpoint(websocket, "default", client_id)
+
+
+# ===== Handlers (shared=感知层, bot=Bot实例) =====
+
+
+async def _auto_greet(shared, bot, client_id: str):
+    try:
+        bot_name = bot.personality.name
+        members = await bot.long_term_profile.get_all_members()
+        if not members:
+            greet_prompt = [
+                {
+                    "role": "system",
+                    "content": f"/no_think 你是{bot_name}，一个家庭陪伴机器人。你刚刚被第一次启动，面前是一个你还不认识的家人。请简短地做自我介绍（不超过两句话），然后自然地问对方叫什么。不要啰嗦，不要用比喻。",
+                },
+                {
+                    "role": "user",
+                    "content": "/no_think [系统] 有人连接了，请打个招呼并自我介绍。",
+                },
+            ]
+        else:
+            greet_prompt = [
+                {
+                    "role": "system",
+                    "content": f"/no_think 你是{bot_name}，一个家庭陪伴机器人。家人上线了，简短打个招呼就行，一句话。",
+                },
+                {"role": "user", "content": "/no_think [系统] 家人连接了。"},
+            ]
+
+        reply = await shared.llm_client.chat(greet_prompt, task_type="daily")
+        reply_text = reply.get("content", "") or f"嘿，我是{bot_name}，你好呀！"
+
+        await manager.send_json_message(
+            client_id,
+            {
+                "type": "reply",
+                "person_id": "bot",
+                "text": reply_text,
+                "emotion": "happy",
+            },
+        )
+
+        try:
+            audio_data = await asyncio.wait_for(
+                bot.tts.synthesize(text=reply_text, emotion="happy"),
+                timeout=15,
+            )
+            if audio_data:
+                await manager.send_tts_audio(client_id, audio_data)
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"自动问候失败: {e}")
+
+
+async def _handle_binary(shared, bot, client_id: str, raw: bytes):
     if len(raw) < 1:
         return
-
     msg_type = raw[0]
     payload = raw[1:]
-
     if msg_type == MessageType.AUDIO:
-        await _process_audio(app, client_id, payload)
+        await _process_audio(shared, bot, client_id, payload)
     elif msg_type == MessageType.VIDEO:
-        await _process_video(app, client_id, payload)
+        await _process_video(shared, bot, client_id, payload)
 
 
-async def _handle_text(app, client_id: str, text: str):
-    """处理文本消息 (JSON 指令)"""
+async def _handle_text(shared, bot, client_id: str, text: str):
     try:
         msg = json.loads(text)
     except json.JSONDecodeError:
@@ -120,27 +205,34 @@ async def _handle_text(app, client_id: str, text: str):
 
     msg_type = msg.get("type")
     if msg_type == "enroll_voice":
-        await _handle_enroll_voice(app, client_id, msg)
+        await _handle_enroll_voice(shared, bot, client_id, msg)
     elif msg_type == "enroll_face":
-        await _handle_enroll_face(app, client_id, msg)
+        await _handle_enroll_face(shared, bot, client_id, msg)
     elif msg_type == "enroll_profile":
-        await _handle_enroll_profile(app, client_id, msg)
+        await _handle_enroll_profile(shared, bot, client_id, msg)
+    elif msg_type == "list_members":
+        await _handle_list_members(shared, bot, client_id)
+    elif msg_type == "get_member":
+        await _handle_get_member(shared, bot, client_id, msg)
+    elif msg_type == "delete_member":
+        await _handle_delete_member(shared, bot, client_id, msg)
+    elif msg_type == "update_member":
+        await _handle_update_member(shared, bot, client_id, msg)
     elif msg_type == "text_input":
-        await _handle_text_input(app, client_id, msg)
+        await _handle_text_input(shared, bot, client_id, msg)
 
 
-async def _process_audio(app, client_id: str, audio_data: bytes):
-    """音频处理管线: VAD → 声纹 → ASR → 对话处理"""
-    # VAD 检测
-    speech_segments = await app.state.vad.process(audio_data)
+async def _process_audio(shared, bot, client_id: str, audio_data: bytes):
+    speech_segments = await shared.vad.process(audio_data)
+    if speech_segments:
+        await manager.send_json_message(client_id, {"type": "stop_tts"})
     if not speech_segments:
         return
 
     for segment in speech_segments:
-        # 声纹识别和 ASR 转写并行执行
         speaker_result, asr_result = await asyncio.gather(
-            app.state.speaker_id.identify(segment),
-            app.state.asr.transcribe(segment),
+            shared.speaker_id.identify(segment),
+            shared.asr.transcribe(segment),
         )
         person_id = speaker_result.get("person_id", "unknown")
         voice_score = speaker_result.get("score", 0.0)
@@ -148,17 +240,13 @@ async def _process_audio(app, client_id: str, audio_data: bytes):
         if not text.strip():
             continue
 
-        # 异常检测 (呼救等)
-        anomaly = await app.state.anomaly_detector.check_audio(
-            text=text, person_id=person_id
-        )
+        anomaly = await bot.anomaly_detector.check_audio(text=text, person_id=person_id)
         if anomaly:
-            await app.state.alert_manager.handle_anomaly(anomaly, client_id, manager)
+            await bot.alert_manager.handle_anomaly(anomaly, client_id, manager)
 
-        # 身份融合 (如果同时有视频人脸结果)
-        face_result = app.state.working_memory.get_latest_face(client_id)
+        face_result = bot.working_memory.get_latest_face(client_id)
         if face_result:
-            fused = app.state.identity_fusion.fuse(
+            fused = shared.identity_fusion.fuse(
                 voice_id=person_id,
                 voice_score=voice_score,
                 face_id=face_result.get("person_id"),
@@ -166,67 +254,102 @@ async def _process_audio(app, client_id: str, audio_data: bytes):
             )
             person_id = fused["person_id"]
 
-        # 更新工作记忆
-        app.state.working_memory.add_turn(
+        bot.working_memory.add_turn(
             session_id=client_id,
             person_id=person_id,
             text=text,
             role="user",
         )
 
-        # 判断是否需要回复 (直接对话 or 插话决策)
-        should_respond = app.state.working_memory.is_addressed_to_bot(client_id, text)
+        # --- Conversation mode: idle/active with wake word detection ---
+        session = bot.working_memory.get_session(client_id)
+        now = time.time()
+
+        # Check timeout -> back to idle
+        if session.conversation_mode == "active":
+            if now - session.last_interaction_time > 30:
+                session.conversation_mode = "idle"
+                session.active_person_id = None
+                logger.info(f"[MODE] 超时30秒，回到 IDLE")
+
+        # Wake word / farewell detection
+        has_wake = any(w in text for w in WAKE_WORDS)
+        has_farewell = any(w in text for w in FAREWELL_WORDS)
+
+        if has_farewell and session.conversation_mode == "active":
+            session.conversation_mode = "idle"
+            session.active_person_id = None
+            logger.info(f"[MODE] 用户说再见，回到 IDLE")
+            should_respond = False
+        elif has_wake:
+            session.conversation_mode = "active"
+            session.active_person_id = person_id
+            session.last_interaction_time = now
+            logger.info(f"[MODE] 唤醒词检测到，进入 ACTIVE, person={person_id}")
+            should_respond = True
+        elif session.conversation_mode == "active":
+            elapsed = now - session.last_interaction_time
+            if elapsed < 5:
+                should_respond = True
+                logger.info(f"[MODE] ACTIVE模式 {elapsed:.1f}s内，直接回复")
+            elif elapsed < 30 and person_id == session.active_person_id:
+                should_respond = True
+                logger.info(f"[MODE] ACTIVE模式 同一人 {elapsed:.1f}s，回复")
+            else:
+                should_respond = False
+                logger.info(f"[MODE] ACTIVE模式 但不匹配: elapsed={elapsed:.1f}s, person={person_id} vs active={session.active_person_id}")
+        else:
+            should_respond = False
+            # Don't log for idle mode - too noisy
+
+        if should_respond:
+            session.last_interaction_time = now
+
+        # Fallback: if not responding via conversation mode, check intervention
         if not should_respond:
-            context = app.state.working_memory.get_context(client_id)
-            decision = app.state.intervention.should_intervene(context)
+            context = bot.working_memory.get_context(client_id)
+            decision = bot.intervention.should_intervene(context)
             should_respond = decision[0]
 
         if should_respond:
-            await _generate_and_respond(app, client_id, person_id)
+            await _generate_and_respond(shared, bot, client_id, person_id)
 
 
-async def _process_video(app, client_id: str, frame_data: bytes):
-    """视频帧处理: 人脸检测 → 人脸识别"""
-    face_result = await app.state.face_id.identify(frame_data)
+async def _process_video(shared, bot, client_id: str, frame_data: bytes):
+    face_result = await shared.face_id.identify(frame_data)
     if face_result:
-        app.state.working_memory.update_face_result(client_id, face_result)
-
-        # 长时间无活动检测
-        anomaly = await app.state.anomaly_detector.check_presence(
+        bot.working_memory.update_face_result(client_id, face_result)
+        anomaly = await bot.anomaly_detector.check_presence(
             person_id=face_result.get("person_id"),
             client_id=client_id,
         )
         if anomaly:
-            await app.state.alert_manager.handle_anomaly(anomaly, client_id, manager)
+            await bot.alert_manager.handle_anomaly(anomaly, client_id, manager)
 
 
-async def _generate_and_respond(app, client_id: str, person_id: str):
-    """生成 LLM 回复并通过 TTS 返回"""
-    # 构建 prompt
-    context = app.state.working_memory.get_context(client_id)
-    messages = await app.state.prompt_builder.build(
-        person_id=person_id, context=context
-    )
+async def _generate_and_respond(shared, bot, client_id: str, person_id: str):
+    context = bot.working_memory.get_context(client_id)
+    messages = await bot.prompt_builder.build(person_id=person_id, context=context)
 
-    # LLM 推理
-    reply = await app.state.llm_client.chat(messages, task_type="daily")
-    reply_text = reply.get("content", "")
+    try:
+        reply = await shared.llm_client.chat(messages, task_type="daily")
+        reply_text = (reply or {}).get("content", "")
+    except Exception as e:
+        logger.error(f"LLM 调用异常: {e}")
+        return
     if not reply_text:
         return
 
-    # 更新人格情绪
-    app.state.personality.update_emotion(context, reply_text)
+    bot.personality.update_emotion(context, reply_text)
 
-    # 更新工作记忆
-    app.state.working_memory.add_turn(
+    bot.working_memory.add_turn(
         session_id=client_id,
         person_id="bot",
         text=reply_text,
         role="assistant",
     )
 
-    # 先发文本回复（不等 TTS，确保客户端能快速收到文本）
-    current_emotion = app.state.personality.current_emotion
+    current_emotion = bot.personality.current_emotion
     await manager.send_json_message(
         client_id,
         {
@@ -237,27 +360,26 @@ async def _generate_and_respond(app, client_id: str, person_id: str):
         },
     )
 
-    # 异步 TTS 合成（不阻塞回复）
     try:
         audio_data = await asyncio.wait_for(
-            app.state.tts.synthesize(text=reply_text, emotion=current_emotion),
+            bot.tts.synthesize(text=reply_text, emotion=current_emotion),
             timeout=15,
         )
         if audio_data:
             await manager.send_tts_audio(client_id, audio_data)
     except TimeoutError:
-        logger.warning(f"TTS 合成超时 (15s), 跳过音频: {reply_text[:30]}...")
+        logger.warning(f"TTS 超时: {reply_text[:30]}...")
     except Exception as e:
-        logger.warning(f"TTS 合成失败: {e}")
+        logger.warning(f"TTS 失败: {e}")
 
 
-async def _handle_enroll_voice(app, client_id: str, msg: dict):
-    """处理声纹注册请求 — 支持 Base64 编码的多段音频"""
+# ===== Enroll / Member management =====
+
+
+async def _handle_enroll_voice(shared, bot, client_id: str, msg: dict):
     person_id = msg.get("person_id")
     if not person_id:
         return
-
-    # 兼容新协议 (Base64 列表) 和旧协议 (单段 bytes)
     audio_samples_b64 = msg.get("audio_samples", [])
     if audio_samples_b64:
         import numpy as np
@@ -267,10 +389,8 @@ async def _handle_enroll_voice(app, client_id: str, msg: dict):
             raw = base64.b64decode(b64_str)
             pcm = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
             audio_samples.append(pcm)
-
         try:
-            await app.state.speaker_id.enroll(person_id, audio_samples)
-            logger.info(f"声纹注册完成: {person_id}, {len(audio_samples)} 段")
+            await shared.speaker_id.enroll(person_id, audio_samples)
             await manager.send_json_message(
                 client_id,
                 {
@@ -281,7 +401,6 @@ async def _handle_enroll_voice(app, client_id: str, msg: dict):
                 },
             )
         except Exception as e:
-            logger.error(f"声纹注册失败: {person_id}: {e}")
             await manager.send_json_message(
                 client_id,
                 {
@@ -291,27 +410,17 @@ async def _handle_enroll_voice(app, client_id: str, msg: dict):
                     "message": f"声纹注册失败: {e}",
                 },
             )
-    else:
-        # 旧协议回退
-        audio_data = msg.get("audio_data")
-        if audio_data:
-            await app.state.speaker_id.enroll(person_id, audio_data)
-            logger.info(f"声纹注册完成 (旧协议): {person_id}")
 
 
-async def _handle_enroll_face(app, client_id: str, msg: dict):
-    """处理人脸注册请求 — 支持 Base64 编码的多张照片"""
+async def _handle_enroll_face(shared, bot, client_id: str, msg: dict):
     person_id = msg.get("person_id")
     if not person_id:
         return
-
     photos_b64 = msg.get("photos", [])
     if photos_b64:
         image_data_list = [base64.b64decode(b64_str) for b64_str in photos_b64]
-
         try:
-            await app.state.face_id.enroll(person_id, image_data_list)
-            logger.info(f"人脸注册完成: {person_id}, {len(image_data_list)} 张")
+            await shared.face_id.enroll(person_id, image_data_list)
             await manager.send_json_message(
                 client_id,
                 {
@@ -322,7 +431,6 @@ async def _handle_enroll_face(app, client_id: str, msg: dict):
                 },
             )
         except Exception as e:
-            logger.error(f"人脸注册失败: {person_id}: {e}")
             await manager.send_json_message(
                 client_id,
                 {
@@ -332,22 +440,14 @@ async def _handle_enroll_face(app, client_id: str, msg: dict):
                     "message": f"人脸注册失败: {e}",
                 },
             )
-    else:
-        # 旧协议回退
-        image_data = msg.get("image_data")
-        if image_data:
-            await app.state.face_id.enroll(person_id, image_data)
-            logger.info(f"人脸注册完成 (旧协议): {person_id}")
 
 
-async def _handle_enroll_profile(app, client_id: str, msg: dict):
-    """处理成员档案注册"""
+async def _handle_enroll_profile(shared, bot, client_id: str, msg: dict):
     person_id = msg.get("person_id")
     if not person_id:
         return
-
     try:
-        await app.state.long_term_profile.add_member(
+        await bot.long_term_profile.add_member(
             person_id=person_id,
             name=msg.get("name", ""),
             nickname=msg.get("nickname", ""),
@@ -355,7 +455,6 @@ async def _handle_enroll_profile(app, client_id: str, msg: dict):
             age=msg.get("age", 0),
             relationship=msg.get("relationship", ""),
         )
-        logger.info(f"档案注册完成: {person_id}")
         await manager.send_json_message(
             client_id,
             {
@@ -366,7 +465,6 @@ async def _handle_enroll_profile(app, client_id: str, msg: dict):
             },
         )
     except Exception as e:
-        logger.error(f"档案注册失败: {person_id}: {e}")
         await manager.send_json_message(
             client_id,
             {
@@ -378,28 +476,140 @@ async def _handle_enroll_profile(app, client_id: str, msg: dict):
         )
 
 
-async def _handle_text_input(app, client_id: str, msg: dict):
-    """处理文本输入 (调试/测试用)"""
+async def _handle_list_members(shared, bot, client_id: str):
+    try:
+        members = await bot.long_term_profile.get_all_members()
+        enriched = []
+        for m in members:
+            profile = await bot.long_term_profile.get_profile(m["person_id"])
+            enriched.append(
+                {
+                    "person_id": m["person_id"],
+                    "name": m["name"],
+                    "role": m["role"],
+                    "age": profile.get("age") if profile else None,
+                    "relationship": profile.get("relationship") if profile else None,
+                }
+            )
+        await manager.send_json_message(
+            client_id, {"type": "members_list", "members": enriched}
+        )
+    except Exception as e:
+        logger.error(f"获取成员列表失败: {e}")
+        await manager.send_json_message(
+            client_id, {"type": "members_list", "members": []}
+        )
+
+
+async def _handle_get_member(shared, bot, client_id: str, msg: dict):
+    person_id = msg.get("person_id")
+    if not person_id:
+        await manager.send_json_message(
+            client_id, {"type": "member_detail", "profile": None, "episodes": []}
+        )
+        return
+    try:
+        profile = await bot.long_term_profile.get_profile(person_id)
+        episodes_raw = await bot.episodic_memory.get_recent(person_id, limit=20)
+        episodes = [
+            {
+                "summary": ep.summary,
+                "emotion_tag": ep.emotion_tag,
+                "timestamp": ep.timestamp,
+            }
+            for ep in episodes_raw
+        ]
+        await manager.send_json_message(
+            client_id,
+            {"type": "member_detail", "profile": profile, "episodes": episodes},
+        )
+    except Exception as e:
+        logger.error(f"获取成员详情失败: {e}")
+        await manager.send_json_message(
+            client_id, {"type": "member_detail", "profile": None, "episodes": []}
+        )
+
+
+async def _handle_delete_member(shared, bot, client_id: str, msg: dict):
+    person_id = msg.get("person_id")
+    if not person_id:
+        await manager.send_json_message(
+            client_id, {"type": "member_deleted", "success": False, "person_id": None}
+        )
+        return
+    try:
+        profile_deleted = await bot.long_term_profile.delete_member(person_id)
+        await bot.episodic_memory.delete_by_person(person_id)
+        voiceprint_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "data",
+            "voiceprints",
+            f"{person_id}.npy",
+        )
+        if os.path.exists(voiceprint_path):
+            os.remove(voiceprint_path)
+        await manager.send_json_message(
+            client_id,
+            {
+                "type": "member_deleted",
+                "success": profile_deleted,
+                "person_id": person_id,
+            },
+        )
+    except Exception as e:
+        logger.error(f"删除成员失败: {e}")
+        await manager.send_json_message(
+            client_id,
+            {"type": "member_deleted", "success": False, "person_id": person_id},
+        )
+
+
+async def _handle_update_member(shared, bot, client_id: str, msg: dict):
+    person_id = msg.get("person_id")
+    if not person_id:
+        await manager.send_json_message(
+            client_id,
+            {"type": "member_updated", "success": False, "person_id": None},
+        )
+        return
+    try:
+        success = await bot.long_term_profile.update_member(
+            person_id,
+            name=msg.get("name"),
+            nickname=msg.get("nickname"),
+            role=msg.get("role"),
+            age=msg.get("age"),
+            relationship=msg.get("relationship"),
+        )
+        await manager.send_json_message(
+            client_id,
+            {"type": "member_updated", "success": success, "person_id": person_id},
+        )
+    except Exception as e:
+        logger.error(f"更新成员失败: {e}")
+        await manager.send_json_message(
+            client_id,
+            {"type": "member_updated", "success": False, "person_id": person_id},
+        )
+
+
+async def _handle_text_input(shared, bot, client_id: str, msg: dict):
     text = msg.get("text", "")
     person_id = msg.get("person_id", "unknown")
     if not text:
         return
 
-    # 更新主动行为调度器的活动时间
-    if hasattr(app.state, "proactive"):
-        app.state.proactive.update_activity(person_id)
+    if bot.proactive:
+        bot.proactive.update_activity(person_id)
 
-    # 检查音频文本异常 (安全检测)
-    anomaly = await app.state.anomaly_detector.check_audio(
-        text=text, person_id=person_id
-    )
+    anomaly = await bot.anomaly_detector.check_audio(text=text, person_id=person_id)
     if anomaly:
-        await app.state.alert_manager.handle_anomaly(anomaly, client_id, manager)
+        await bot.alert_manager.handle_anomaly(anomaly, client_id, manager)
 
-    app.state.working_memory.add_turn(
+    bot.working_memory.add_turn(
         session_id=client_id,
         person_id=person_id,
         text=text,
         role="user",
     )
-    await _generate_and_respond(app, client_id, person_id)
+    await _generate_and_respond(shared, bot, client_id, person_id)

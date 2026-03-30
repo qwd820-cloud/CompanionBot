@@ -31,6 +31,10 @@ class Session:
     latest_face: dict | None = None
     latest_face_time: float = 0.0
     active_person_ids: set[str] = field(default_factory=set)
+    # Conversation mode: "idle" (waiting for wake word) or "active" (in conversation)
+    conversation_mode: str = "idle"
+    active_person_id: str | None = None
+    last_interaction_time: float = 0.0
 
 
 class WorkingMemory:
@@ -132,6 +136,29 @@ class WorkingMemory:
             "text": t.text,
             "role": t.role,
             "timestamp": t.timestamp,
+        }
+
+    def get_session(self, session_id: str) -> Session | None:
+        """获取会话对象 (用于对话模式管理)"""
+        session = self.sessions.get(session_id)
+        if session is None:
+            self.start_session(session_id)
+            session = self.sessions[session_id]
+        return session
+
+    def get_session_state(self, session_id: str) -> dict:
+        """获取会话的对话模式状态"""
+        session = self.sessions.get(session_id)
+        if session is None:
+            return {
+                "conversation_mode": "idle",
+                "active_person_id": None,
+                "last_interaction_time": 0.0,
+            }
+        return {
+            "conversation_mode": session.conversation_mode,
+            "active_person_id": session.active_person_id,
+            "last_interaction_time": session.last_interaction_time,
         }
 
     def get_recent_text(self, session_id: str, n: int = 5) -> str:

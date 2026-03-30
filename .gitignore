@@ -10,6 +10,13 @@ venv/
 server/data/companion.db
 server/data/chroma/
 server/data/voiceprints/*.npy
+server/data/bots/
+
+# Logs
+logs/
+
+# Build artifacts
+server/static/*.apk
 
 # IDE
 .idea/

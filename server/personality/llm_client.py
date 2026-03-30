@@ -123,7 +123,7 @@ class LLMClient:
         messages: list[dict],
         task_type: str = "daily",
         temperature: float = 0.7,
-        max_tokens: int = 512,
+        max_tokens: int = 100,
     ) -> dict:
         """
         根据任务类型自动路由到本地或云端。
@@ -136,21 +136,23 @@ class LLMClient:
             max_tokens = params["max_tokens"]
             prefer = params.get("prefer", "local")
 
-        # 路由: 优先引擎 → 备选引擎
+        # 路由: 优先引擎 → 备选引擎 → 兜底
         if prefer == "cloud" and self._cloud_available:
             result = await self._call_cloud(messages, temperature, max_tokens)
             if result:
                 return result
-            # 云端失败，fallback 本地
-            return await self._call_local(messages, temperature, max_tokens)
+            result = await self._call_local(messages, temperature, max_tokens)
+            if result:
+                return result
         else:
             result = await self._call_local(messages, temperature, max_tokens)
             if result:
                 return result
-            # 本地失败，fallback 云端
             if self._cloud_available:
-                return await self._call_cloud(messages, temperature, max_tokens)
-            return self._fallback_response()
+                result = await self._call_cloud(messages, temperature, max_tokens)
+                if result:
+                    return result
+        return self._fallback_response()
 
     async def _call_local(
         self, messages: list[dict], temperature: float, max_tokens: int
@@ -166,12 +168,30 @@ class LLMClient:
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    stream=False,
+                    extra_body={"chat_template_kwargs": {"enable_thinking": False}},
                 ),
-                timeout=10,
+                timeout=30,
             )
             choice = response.choices[0]
+            # Qwen3.5 thinking mode: content may be empty, actual reply in reasoning_content
+            reply_content = choice.message.content or ""
+            if (
+                not reply_content
+                and hasattr(choice.message, "reasoning_content")
+                and choice.message.reasoning_content
+            ):
+                # 从 reasoning_content 提取最后的实际回复
+                rc = choice.message.reasoning_content.strip()
+                # reasoning_content 末尾通常是实际回复
+                reply_content = rc.split(chr(10))[-1].strip() if rc else ""
+                print(f"[LLM] 从reasoning_content提取: {reply_content[:50]}")
+            if not reply_content:
+                print(
+                    f"[LLM] content为空, reasoning_content={getattr(choice.message, 'reasoning_content', 'N/A')[:100] if hasattr(choice.message, 'reasoning_content') else 'N/A'}"
+                )
             return {
-                "content": choice.message.content or "",
+                "content": reply_content,
                 "model": f"{self.local_model}-local",
                 "usage": {
                     "prompt_tokens": response.usage.prompt_tokens
@@ -207,8 +227,24 @@ class LLMClient:
                 stream=False,
             )
             choice = response.choices[0]
+            # Qwen3.5 thinking mode: content may be empty, actual reply in reasoning_content
+            reply_content = choice.message.content or ""
+            if (
+                not reply_content
+                and hasattr(choice.message, "reasoning_content")
+                and choice.message.reasoning_content
+            ):
+                # 从 reasoning_content 提取最后的实际回复
+                rc = choice.message.reasoning_content.strip()
+                # reasoning_content 末尾通常是实际回复
+                reply_content = rc.split(chr(10))[-1].strip() if rc else ""
+                print(f"[LLM] 从reasoning_content提取: {reply_content[:50]}")
+            if not reply_content:
+                print(
+                    f"[LLM] content为空, reasoning_content={getattr(choice.message, 'reasoning_content', 'N/A')[:100] if hasattr(choice.message, 'reasoning_content') else 'N/A'}"
+                )
             return {
-                "content": choice.message.content or "",
+                "content": reply_content,
                 "model": f"{self.cloud_model}-cloud",
                 "usage": {
                     "prompt_tokens": response.usage.prompt_tokens

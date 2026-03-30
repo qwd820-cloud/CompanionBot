@@ -102,6 +102,21 @@ class VADProcessor:
                 if self._speech_start is None:
                     self._speech_start = current_ms
                 self._speech_buffer.append(window)
+                # 防止语音段无限累积 (最长 15 秒强制截断)
+                max_speech_samples = int(self.sample_rate * 15)
+                speech_len = sum(len(b) for b in self._speech_buffer)
+                if speech_len >= max_speech_samples:
+                    speech_audio = np.concatenate(self._speech_buffer)
+                    segments.append(
+                        SpeechSegment(
+                            audio=speech_audio,
+                            start_ms=self._speech_start,
+                            end_ms=self._speech_start
+                            + (len(speech_audio) / self.sample_rate) * 1000,
+                        )
+                    )
+                    self._speech_start = None
+                    self._speech_buffer = []
             else:
                 self._silence_count += 1
                 silence_ms = self._silence_count * window_ms
@@ -136,12 +151,12 @@ class VADProcessor:
 
         tensor = torch.from_numpy(window)
         prob = self.model(tensor, self.sample_rate).item()
-        return prob >= self.threshold
+        return prob >= 0.6  # 手机麦克风环境噪音较多，阈值提高到 0.6
 
     def _energy_detect(self, window: np.ndarray) -> bool:
         """能量检测回退方案"""
         energy = np.sqrt(np.mean(window**2))
-        return energy > 0.01  # 简单能量阈值
+        return energy > 0.03  # 手机麦克风噪音较高，阈值提高
 
     def reset(self):
         """重置 VAD 状态"""

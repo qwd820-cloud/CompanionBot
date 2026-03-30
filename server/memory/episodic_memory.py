@@ -105,6 +105,17 @@ class EpisodicMemory:
         )
         return [self._row_to_episode(row) for row in cursor.fetchall()]
 
+    async def delete_by_person(self, person_id: str) -> int:
+        """删除某人的所有情景记忆，返回删除条数"""
+        cursor = self.conn.execute(
+            "DELETE FROM episodic_memory WHERE person_id = ?",
+            (person_id,),
+        )
+        self.conn.commit()
+        count = cursor.rowcount
+        logger.info(f"已删除 {count} 条情景记忆: person={person_id}")
+        return count
+
     @staticmethod
     def _row_to_episode(row: sqlite3.Row) -> Episode:
         return Episode(
