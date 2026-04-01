@@ -1,22 +1,36 @@
-"""LLM 调用客户端 — 本地 Qwen3.5 + 云端 Kimi Code 双引擎"""
+"""LLM 调用客户端 — MiniCPM-o / 本地 Qwen3.5 / 云端 Kimi Code 三引擎"""
 
 import asyncio
 import logging
 import os
+
+import httpx
+
+# 在任何网络库 import 之前强制清除代理
+for _pv in [
+    "ALL_PROXY",
+    "all_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+]:
+    os.environ.pop(_pv, None)
 
 logger = logging.getLogger("companion_bot.llm_client")
 
 
 class LLMClient:
     """
-    LLM 推理客户端，支持本地和云端双引擎:
+    LLM 推理客户端，支持三引擎:
 
-    - 本地: Qwen3.5 via Unsloth/llama-server (端口 57847)
-    - 云端: Kimi Code API (OpenAI 兼容, https://api.kimi.com/coding/v1)
+    - MiniCPM-o 4.5: 全模态本地引擎 (优先，文本模式)
+    - 本地: Qwen3.5 via Unsloth/llama-server (端口 57847，备选)
+    - 云端: Kimi Code API (OpenAI 兼容, 复杂推理/记忆沉淀)
 
     路由策略:
-    - 日常对话优先走本地，本地失败自动 fallback 云端
-    - 记忆沉淀/复杂推理可配置优先走云端 (Kimi 推理能力更强)
+    - 日常对话: MiniCPM-o → Qwen3.5 本地 → 云端
+    - 记忆沉淀/复杂推理: 云端优先 → MiniCPM-o → Qwen3.5 本地
     """
 
     # 不同任务类型的推理参数
@@ -37,7 +51,11 @@ class LLMClient:
         cloud_base_url: str | None = None,
         cloud_api_key: str | None = None,
         cloud_model: str = "kimi-for-coding",
+        minicpm_engine=None,
     ):
+        # MiniCPM-o 全模态引擎 (优先本地引擎)
+        self._minicpm_engine = minicpm_engine
+
         # 本地 LLM: Unsloth llama-server
         self.local_base_url = local_base_url or os.environ.get(
             "LOCAL_LLM_URL", "http://localhost:57847/v1"
@@ -63,14 +81,18 @@ class LLMClient:
         return local_ok or cloud_ok
 
     async def _check_local(self) -> bool:
-        """探测本地 LLM"""
+        """探测本地 LLM — 用原生 httpx 绕过 openai 代理问题"""
         try:
-            client = self._get_local_client()
-            models = await client.models.list()
-            model_ids = [m.id for m in models.data]
-            self._local_available = True
-            logger.info(f"本地 LLM 可用: {self.local_base_url}, 模型: {model_ids}")
-            return True
+            async with httpx.AsyncClient(
+                transport=httpx.AsyncHTTPTransport(), timeout=5
+            ) as client:
+                resp = await client.get(f"{self.local_base_url}/models")
+                if resp.status_code == 200:
+                    self._local_available = True
+                    logger.info(f"本地 LLM 可用: {self.local_base_url}")
+                    return True
+            self._local_available = False
+            return False
         except Exception as e:
             self._local_available = False
             logger.warning(f"本地 LLM 不可用 ({self.local_base_url}): {e}")
@@ -95,11 +117,16 @@ class LLMClient:
     def _get_local_client(self):
         """懒加载本地 LLM 客户端"""
         if self._local_client is None:
+            import httpx
             from openai import AsyncOpenAI
 
+            # 创建无代理的 httpx 客户端，防止 ALL_PROXY 干扰本地连接
             self._local_client = AsyncOpenAI(
                 base_url=self.local_base_url,
                 api_key="local",
+                http_client=httpx.AsyncClient(
+                    transport=httpx.AsyncHTTPTransport(),
+                ),
             )
         return self._local_client
 
@@ -154,12 +181,48 @@ class LLMClient:
                     return result
         return self._fallback_response()
 
+    async def _call_minicpm(
+        self, messages: list[dict], temperature: float, max_tokens: int
+    ) -> dict | None:
+        """调用 MiniCPM-o 4.5 文本模式 (无音频输入)"""
+        if not self._minicpm_engine or not self._minicpm_engine.available:
+            return None
+        try:
+            result = await self._minicpm_engine.chat_and_speak(
+                audio_segment=None,
+                messages=messages,
+                temperature=temperature,
+                max_new_tokens=max_tokens,
+            )
+            content = (result or {}).get("content", "")
+            if content:
+                return {
+                    "content": content,
+                    "model": "minicpm-o-4.5-local",
+                    "usage": {},
+                }
+            return None
+        except Exception as e:
+            logger.error(f"MiniCPM-o 文本调用失败: {e}")
+            return None
+
     async def _call_local(
         self, messages: list[dict], temperature: float, max_tokens: int
     ) -> dict | None:
-        """调用本地 LLM"""
+        """调用本地 LLM — MiniCPM-o 优先，回退 llama-server"""
+        # 优先尝试 MiniCPM-o
+        result = await self._call_minicpm(messages, temperature, max_tokens)
+        if result:
+            return result
+
         if not self._local_available:
-            return None
+            # 每 60 秒重试一次，允许恢复
+            import time
+
+            last_fail = getattr(self, "_local_last_fail", 0)
+            if time.time() - last_fail < 60:
+                return None
+            logger.info("本地 LLM 重试连接...")
         client = self._get_local_client()
         try:
             response = await asyncio.wait_for(
@@ -173,6 +236,11 @@ class LLMClient:
                 ),
                 timeout=30,
             )
+            # 调用成功，恢复可用标记
+            if not self._local_available:
+                logger.info("本地 LLM 恢复连接")
+                self._local_available = True
+
             choice = response.choices[0]
             # Qwen3.5 thinking mode: content may be empty, actual reply in reasoning_content
             reply_content = choice.message.content or ""
@@ -203,12 +271,14 @@ class LLMClient:
                 },
             }
         except TimeoutError:
-            logger.warning("本地 LLM 调用超时 (10s)，标记为不可用")
+            logger.warning("本地 LLM 调用超时，标记为暂不可用")
             self._local_available = False
+            self._local_last_fail = __import__("time").time()
             return None
         except Exception as e:
             logger.error(f"本地 LLM 调用失败: {e}")
-            self._local_available = False  # 标记不可用，后续直接走云端
+            self._local_available = False
+            self._local_last_fail = __import__("time").time()
             return None
 
     async def _call_cloud(

@@ -7,6 +7,7 @@ Bot 实例 (bot): 记忆, 人格, 安全, TTS — 每个 bot 独立
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import os
@@ -16,7 +17,7 @@ from enum import IntEnum
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from server.utils.keywords import WAKE_WORDS, FAREWELL_WORDS
+from server.utils.keywords import FAREWELL_WORDS, WAKE_WORDS
 
 logger = logging.getLogger("companion_bot.ws")
 
@@ -95,10 +96,8 @@ async def websocket_endpoint(websocket: WebSocket, bot_id: str, client_id: str):
     bot.working_memory.start_session(client_id)
 
     # Reset VAD for fresh connection
-    try:
+    with contextlib.suppress(Exception):
         shared.vad.reset()
-    except Exception:
-        pass
 
     # 只对主客户端自动问候，管理连接不触发
     if client_id.startswith("android_client"):
@@ -266,11 +265,13 @@ async def _process_audio(shared, bot, client_id: str, audio_data: bytes):
         now = time.time()
 
         # Check timeout -> back to idle
-        if session.conversation_mode == "active":
-            if now - session.last_interaction_time > 30:
-                session.conversation_mode = "idle"
-                session.active_person_id = None
-                logger.info(f"[MODE] 超时30秒，回到 IDLE")
+        if (
+            session.conversation_mode == "active"
+            and now - session.last_interaction_time > 30
+        ):
+            session.conversation_mode = "idle"
+            session.active_person_id = None
+            logger.info("[MODE] 超时30秒，回到 IDLE")
 
         # Wake word / farewell detection
         has_wake = any(w in text for w in WAKE_WORDS)
@@ -279,7 +280,7 @@ async def _process_audio(shared, bot, client_id: str, audio_data: bytes):
         if has_farewell and session.conversation_mode == "active":
             session.conversation_mode = "idle"
             session.active_person_id = None
-            logger.info(f"[MODE] 用户说再见，回到 IDLE")
+            logger.info("[MODE] 用户说再见，回到 IDLE")
             should_respond = False
         elif has_wake:
             session.conversation_mode = "active"
@@ -297,7 +298,9 @@ async def _process_audio(shared, bot, client_id: str, audio_data: bytes):
                 logger.info(f"[MODE] ACTIVE模式 同一人 {elapsed:.1f}s，回复")
             else:
                 should_respond = False
-                logger.info(f"[MODE] ACTIVE模式 但不匹配: elapsed={elapsed:.1f}s, person={person_id} vs active={session.active_person_id}")
+                logger.info(
+                    f"[MODE] ACTIVE模式 但不匹配: elapsed={elapsed:.1f}s, person={person_id} vs active={session.active_person_id}"
+                )
         else:
             should_respond = False
             # Don't log for idle mode - too noisy
@@ -312,7 +315,13 @@ async def _process_audio(shared, bot, client_id: str, audio_data: bytes):
             should_respond = decision[0]
 
         if should_respond:
-            await _generate_and_respond(shared, bot, client_id, person_id)
+            await _generate_and_respond(
+                shared,
+                bot,
+                client_id,
+                person_id,
+                audio_segment=segment.audio,
+            )
 
 
 async def _process_video(shared, bot, client_id: str, frame_data: bytes):
@@ -327,16 +336,61 @@ async def _process_video(shared, bot, client_id: str, frame_data: bytes):
             await bot.alert_manager.handle_anomaly(anomaly, client_id, manager)
 
 
-async def _generate_and_respond(shared, bot, client_id: str, person_id: str):
-    context = bot.working_memory.get_context(client_id)
-    messages = await bot.prompt_builder.build(person_id=person_id, context=context)
+def _needs_deep_thinking(context: dict) -> bool:
+    """判断是否需要启用 MiniCPM-o 思考模式"""
+    turns = context.get("turns", [])
+    if not turns:
+        return False
+    last_text = turns[-1].get("text", "") if turns else ""
+    thinking_triggers = ["怎么办", "为什么", "建议", "应该", "帮我分析", "你觉得"]
+    return any(t in last_text for t in thinking_triggers)
 
-    try:
-        reply = await shared.llm_client.chat(messages, task_type="daily")
-        reply_text = (reply or {}).get("content", "")
-    except Exception as e:
-        logger.error(f"LLM 调用异常: {e}")
-        return
+
+async def _generate_and_respond(
+    shared,
+    bot,
+    client_id: str,
+    person_id: str,
+    audio_segment=None,
+):
+    context = bot.working_memory.get_context(client_id)
+    current_emotion = bot.personality.current_emotion
+
+    reply_text = ""
+    reply_audio = None
+
+    minicpm = getattr(shared, "minicpm_engine", None)
+    if minicpm and minicpm.available and audio_segment is not None:
+        # === 端到端路径: MiniCPM-o 直接听音频回复 (无需预 ASR) ===
+        try:
+            system_text = await bot.prompt_builder.build_system_text(person_id, context)
+            history = bot.prompt_builder.get_history_turns(context)
+            enable_thinking = _needs_deep_thinking(context)
+
+            result = await minicpm.chat_with_audio(
+                audio=audio_segment,
+                system_text=system_text,
+                history=history,
+                emotion=current_emotion,
+                enable_thinking=enable_thinking,
+            )
+            reply_text = (result or {}).get("content", "")
+            reply_audio = (result or {}).get("audio")
+        except Exception as e:
+            logger.error(f"MiniCPM-o 端到端调用异常: {e}")
+
+    if not reply_text:
+        # === 回退路径: 文本 LLM + 独立 TTS ===
+        try:
+            messages = await bot.prompt_builder.build(
+                person_id=person_id, context=context
+            )
+            reply = await shared.llm_client.chat(messages, task_type="daily")
+            reply_text = (reply or {}).get("content", "")
+        except Exception as e:
+            logger.error(f"LLM 调用异常: {e}")
+            return
+
     if not reply_text:
         return
 
@@ -360,17 +414,23 @@ async def _generate_and_respond(shared, bot, client_id: str, person_id: str):
         },
     )
 
-    try:
-        audio_data = await asyncio.wait_for(
-            bot.tts.synthesize(text=reply_text, emotion=current_emotion),
-            timeout=15,
-        )
-        if audio_data:
-            await manager.send_tts_audio(client_id, audio_data)
-    except TimeoutError:
-        logger.warning(f"TTS 超时: {reply_text[:30]}...")
-    except Exception as e:
-        logger.warning(f"TTS 失败: {e}")
+    if reply_audio:
+        await manager.send_tts_audio(client_id, reply_audio)
+    else:
+        try:
+            audio_data = await asyncio.wait_for(
+                bot.tts.synthesize(text=reply_text, emotion=current_emotion),
+                timeout=15,
+            )
+            if audio_data:
+                await manager.send_tts_audio(client_id, audio_data)
+        except TimeoutError:
+            logger.warning(f"TTS 超时: {reply_text[:30]}...")
+        except Exception as e:
+            logger.warning(f"TTS 失败: {e}")
+
+    # 无论 TTS 成功与否，都发送完成信号，让客户端切换状态
+    await manager.send_json_message(client_id, {"type": "reply_done"})
 
 
 # ===== Enroll / Member management =====

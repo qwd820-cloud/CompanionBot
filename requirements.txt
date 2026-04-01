@@ -33,6 +33,13 @@ funasr>=1.0.0
 # LLM 推理
 openai>=1.6.0
 
+# MiniCPM-o 4.5 全模态引擎 (可选，启用时需安装)
+# transformers>=4.51.0
+# accelerate>=0.27.0
+# soundfile>=0.12.0
+# librosa>=0.10.0
+# minicpmo-utils[all]>=1.0.5
+
 # 工具依赖
 pyyaml>=6.0
 numpy>=1.24.0

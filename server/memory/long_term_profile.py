@@ -129,7 +129,7 @@ class LongTermProfile:
         values.append(time.time())
         values.append(person_id)
 
-        sql = f"UPDATE family_profiles SET {', '.join(set_clauses)} WHERE person_id = ?"
+        sql = f"UPDATE family_profiles SET {', '.join(set_clauses)} WHERE person_id = ?"  # noqa: S608
         cursor = self.conn.execute(sql, values)
         self.conn.commit()
 
@@ -139,7 +139,6 @@ class LongTermProfile:
         else:
             logger.warning(f"更新失败，成员不存在: {person_id}")
             return False
-
 
     async def update_interests(self, person_id: str, new_interests: list[str]):
         """更新兴趣爱好 (合并)"""

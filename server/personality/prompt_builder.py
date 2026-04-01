@@ -1,4 +1,4 @@
-"""Prompt 组装器 — 极简版，适配 4B 小模型"""
+"""Prompt 组装器 — 支持文本模式和端到端音频模式"""
 
 import logging
 from datetime import datetime
@@ -12,8 +12,13 @@ logger = logging.getLogger("companion_bot.prompt_builder")
 
 
 class PromptBuilder:
-    def __init__(self, personality: PersonalityEngine, episodic: EpisodicMemory,
-                 semantic: SemanticMemory, profile: LongTermProfile):
+    def __init__(
+        self,
+        personality: PersonalityEngine,
+        episodic: EpisodicMemory,
+        semantic: SemanticMemory,
+        profile: LongTermProfile,
+    ):
         self.personality = personality
         self.episodic = episodic
         self.semantic = semantic
@@ -106,14 +111,41 @@ class PromptBuilder:
         if recent_query:
             try:
                 semantic_results = await self.semantic.search(
-                    query=recent_query, person_id=person_id, top_k=5)
+                    query=recent_query, person_id=person_id, top_k=5
+                )
                 if semantic_results:
                     parts.append("相关记忆:")
                     for mem in semantic_results:
                         if mem.get("score", 0) > 0.3:
-                            parts.append(f"  - {mem[text]}")
+                            parts.append(f"  - {mem['text']}")
             except Exception:
                 pass
         if not parts:
             return ""
         return "\n".join(parts)
+
+    async def build_system_text(self, person_id: str, context: dict) -> str:
+        """只返回 system prompt 文本 (人格+档案+记忆)
+
+        用于端到端音频对话，注入 MiniCPM-o 的 system message。
+        """
+        turns = context.get("turns", [])
+        recent_query = ""
+        for t in reversed(turns):
+            if t.get("role") == "user" and t.get("text"):
+                recent_query = t["text"]
+                break
+        return await self._build_system_prompt(person_id, recent_query)
+
+    def get_history_turns(self, context: dict) -> list[dict]:
+        """提取对话历史 (不含 system prompt)，用于端到端音频对话"""
+        turns = context.get("turns", [])
+        result = []
+        for turn in turns:
+            role = "assistant" if turn.get("role") == "assistant" else "user"
+            text = turn.get("text", "")
+            if role == "user":
+                speaker = turn.get("person_id", "用户")
+                text = f"[{speaker}] {text}"
+            result.append({"role": role, "content": text})
+        return result

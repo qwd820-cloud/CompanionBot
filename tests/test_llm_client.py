@@ -1,4 +1,4 @@
-"""LLM 客户端测试 — 双引擎路由、fallback、参数覆盖"""
+"""LLM 客户端测试 — 三引擎路由、fallback、参数覆盖"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,6 +14,7 @@ class TestLLMClientRouting:
         client = LLMClient(
             local_base_url="http://localhost:57847/v1",
             cloud_api_key="sk-test-key" if cloud_available else "",
+            minicpm_engine=None,  # 测试环境不使用 MiniCPM-o
         )
         client._local_available = local_available
         client._cloud_available = cloud_available
@@ -78,11 +79,16 @@ class TestLLMClientRouting:
 
     @pytest.mark.asyncio
     async def test_both_unavailable_returns_fallback(self):
-        """双引擎都不可用时返回兜底回复"""
+        """三引擎都不可用时返回兜底回复"""
         client = self._make_client(local_available=False, cloud_available=False)
-        result = await client.chat(
-            [{"role": "user", "content": "你好"}], task_type="daily"
-        )
+        # 确保本地重试也失败
+        with patch.object(client, "_get_local_client") as mock_get:
+            mock_get.return_value.chat.completions.create = AsyncMock(
+                side_effect=Exception("连接失败")
+            )
+            result = await client.chat(
+                [{"role": "user", "content": "你好"}], task_type="daily"
+            )
         assert result["model"] == "fallback"
         assert "反应不过来" in result["content"]
 
@@ -113,8 +119,14 @@ class TestLLMClientRouting:
         client = self._make_client(local_available=False, cloud_available=True)
         mock_response = self._mock_completion("云端日常", "cloud-model")
 
-        with patch.object(client, "_get_cloud_client") as mock_get:
-            mock_get.return_value.chat.completions.create = AsyncMock(
+        with (
+            patch.object(client, "_get_local_client") as mock_local,
+            patch.object(client, "_get_cloud_client") as mock_cloud,
+        ):
+            mock_local.return_value.chat.completions.create = AsyncMock(
+                side_effect=Exception("本地不可用")
+            )
+            mock_cloud.return_value.chat.completions.create = AsyncMock(
                 return_value=mock_response
             )
             result = await client.chat(

@@ -1,4 +1,4 @@
-"""TTS 语音合成模块 — Edge-TTS 在线 + pyttsx3 离线 fallback"""
+"""TTS 语音合成模块 — MiniCPM-o / Edge-TTS / pyttsx3 三级 fallback"""
 
 import asyncio
 import io
@@ -30,22 +30,33 @@ DEFAULT_VOICE = "zh-CN-XiaoyiNeural"
 
 
 class TTSEngine:
-    """语音合成引擎 — Edge-TTS 在线优先，pyttsx3 离线 fallback"""
+    """语音合成引擎 — MiniCPM-o 优先，Edge-TTS 次选，pyttsx3 离线 fallback"""
 
-    def __init__(self, voice: str = DEFAULT_VOICE):
+    def __init__(self, voice: str = DEFAULT_VOICE, minicpm_engine=None):
         self.voice = voice
+        self._minicpm_engine = minicpm_engine
         self._edge_available = True  # 首次失败后标记为不可用
         self._pyttsx3_engine = None
 
     async def synthesize(self, text: str, emotion: str = "neutral") -> bytes | None:
         """
-        文字转语音。优先 Edge-TTS (高质量)，失败时 fallback pyttsx3 (离线)。
+        文字转语音。MiniCPM-o → Edge-TTS → pyttsx3 三级 fallback。
         返回: 音频字节，或 None
         """
         if not text.strip():
             return None
 
-        # 优先 Edge-TTS
+        # 优先 MiniCPM-o TTS (CosyVoice2, 支持声音克隆+情绪控制)
+        if self._minicpm_engine and self._minicpm_engine.available:
+            audio = await self._minicpm_engine.synthesize(text, emotion)
+            if audio:
+                logger.debug(
+                    f"MiniCPM-o TTS 合成完成: {len(audio)} bytes, emotion={emotion}"
+                )
+                return audio
+            logger.warning("MiniCPM-o TTS 失败，回退 Edge-TTS")
+
+        # 次选 Edge-TTS
         if self._edge_available:
             audio = await self._synthesize_edge(text, emotion)
             if audio:

@@ -10,15 +10,24 @@ SAMPLE_RATE = 16000
 
 
 class ASRProcessor:
-    """语音转文字处理器，支持 FunASR 和 Whisper"""
+    """语音转文字处理器，支持 MiniCPM-o / FunASR / Whisper"""
 
-    def __init__(self, backend: str = "funasr", model_size: str = "large"):
+    def __init__(
+        self, backend: str = "funasr", model_size: str = "large", minicpm_engine=None
+    ):
         self.backend = backend
         self.model_size = model_size
         self.model = None
+        self._minicpm_engine = minicpm_engine
+        if minicpm_engine and minicpm_engine.available:
+            self.backend = "minicpm"
+            self.model = minicpm_engine  # model 非 None 表示可用
 
     async def initialize(self):
-        """加载 ASR 模型"""
+        """加载 ASR 模型 (MiniCPM-o 模式下无需调用)"""
+        if self._minicpm_engine and self._minicpm_engine.available:
+            logger.info("ASR 委托给 MiniCPM-o 引擎")
+            return
         if self.backend == "funasr":
             await self._init_funasr()
         else:
@@ -63,6 +72,9 @@ class ASRProcessor:
 
         if self.model is None:
             return {"text": "", "timestamps": []}
+
+        if self._minicpm_engine and self._minicpm_engine.available:
+            return await self._minicpm_engine.transcribe(audio)
 
         if self.backend == "funasr":
             return self._transcribe_funasr(audio)

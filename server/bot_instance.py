@@ -96,8 +96,9 @@ class BotInstance:
             profile=self.long_term_profile,
         )
 
-        # 输出层
-        self.tts = TTSEngine()
+        # 输出层 (MiniCPM-o TTS 优先，回退 Edge-TTS/pyttsx3)
+        minicpm = getattr(self.shared, "minicpm_engine", None)
+        self.tts = TTSEngine(minicpm_engine=minicpm)
         self.notification = NotificationManager(config=notification_cfg)
 
         # 安全模块

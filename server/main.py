@@ -37,10 +37,11 @@ def _load_env():
 _load_env()
 
 import json
+
 import yaml
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 
 from server.bot_manager import BotManager
 from server.perception.asr import ASRProcessor
@@ -68,7 +69,7 @@ def _configure_gpu_memory():
         import torch
 
         if torch.cuda.is_available():
-            fraction = float(os.environ.get("TORCH_CUDA_ALLOC_FRACTION", "0.15"))
+            fraction = float(os.environ.get("TORCH_CUDA_ALLOC_FRACTION", "0.30"))
             torch.cuda.set_per_process_memory_fraction(fraction)
             device = torch.cuda.get_device_name(0)
             logger.info(f"CUDA 设备: {device}, 内存占比限制: {fraction:.0%}")
@@ -89,21 +90,43 @@ async def lifespan(app: FastAPI):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     (DATA_DIR / "voiceprints").mkdir(exist_ok=True)
 
+    # ===== MiniCPM-o 全模态引擎 (可选) =====
+    minicpm_engine = None
+    try:
+        minicpm_cfg = load_config("minicpm.yaml")
+    except Exception:
+        minicpm_cfg = {}
+
+    if minicpm_cfg.get("minicpm", {}).get("enabled", False):
+        from server.engine.minicpm_engine import MiniCPMEngine
+
+        minicpm_engine = MiniCPMEngine(minicpm_cfg["minicpm"])
+        await minicpm_engine.initialize()
+        if not minicpm_engine.available:
+            logger.warning("MiniCPM-o 加载失败，回退到原有管线")
+            minicpm_engine = None
+        else:
+            logger.info("MiniCPM-o 4.5 引擎已启用")
+
     # ===== 全局共享层 (感知 + LLM) =====
     shared = SimpleNamespace()
+    shared.minicpm_engine = minicpm_engine
     shared.vad = VADProcessor()
     shared.speaker_id = SpeakerIdentifier(voiceprint_dir=str(DATA_DIR / "voiceprints"))
     shared.face_id = FaceIdentifier()
-    shared.asr = ASRProcessor()
+    shared.asr = ASRProcessor(minicpm_engine=minicpm_engine)
     shared.identity_fusion = IdentityFusion()
     shared.llm_client = LLMClient()
 
-    await asyncio.gather(
+    init_tasks = [
         shared.vad.initialize(),
         shared.speaker_id.initialize(),
         shared.face_id.initialize(),
-        shared.asr.initialize(),
-    )
+    ]
+    # MiniCPM-o 启用时 ASR 委托给它，无需独立初始化
+    if not minicpm_engine:
+        init_tasks.append(shared.asr.initialize())
+    await asyncio.gather(*init_tasks)
 
     llm_ok = await shared.llm_client.check_health()
     if not llm_ok:
@@ -156,6 +179,11 @@ async def health_check():
     )
     modules["face_id"] = "loaded" if shared.face_id.model is not None else "fallback"
     modules["asr"] = "loaded" if shared.asr.model is not None else "not_loaded"
+    modules["minicpm"] = (
+        "loaded"
+        if shared.minicpm_engine and shared.minicpm_engine.available
+        else "disabled"
+    )
     llm = shared.llm_client
     if llm._local_available and llm._cloud_available:
         modules["llm"] = "local+cloud"
@@ -175,7 +203,6 @@ async def health_check():
     }
 
 
-
 # ===== App Update API =====
 @app.get("/api/app/version")
 async def app_version():
@@ -192,7 +219,11 @@ async def app_version():
 async def app_download():
     apk_path = Path(__file__).parent / "static" / "companionbot.apk"
     if apk_path.exists():
-        return FileResponse(apk_path, filename="companionbot.apk", media_type="application/vnd.android.package-archive")
+        return FileResponse(
+            apk_path,
+            filename="companionbot.apk",
+            media_type="application/vnd.android.package-archive",
+        )
     return JSONResponse({"error": "APK not found"}, status_code=404)
 
 
