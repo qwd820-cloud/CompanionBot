@@ -119,6 +119,51 @@ UI 中新增一个 bot_id 输入框（默认值 "default"）。
 }
 ```
 
+### 6. 新增消息类型处理 (必须)
+
+**问题**: 后端新增了两种 JSON 消息类型。
+
+**改动文件**: `MainActivity.kt`
+
+#### `state_change` — 交互状态变更
+后端在对话流程的不同阶段发送状态通知:
+```json
+{"type": "state_change", "state": "listening"}     // 检测到语音
+{"type": "state_change", "state": "processing"}    // 正在处理/思考
+{"type": "state_change", "state": "responding"}    // 生成回复
+{"type": "state_change", "state": "speaking"}      // 播放语音
+{"type": "state_change", "state": "idle"}          // 空闲
+```
+
+```kotlin
+"state_change" -> {
+    val state = json.get("state")?.asString ?: "idle"
+    runOnUiThread {
+        stateIndicator.text = when(state) {
+            "listening" -> "聆听中..."
+            "processing" -> "思考中..."
+            "responding" -> "回复中..."
+            "speaking" -> "说话中..."
+            else -> ""
+        }
+    }
+}
+```
+
+#### `proactive` — 主动关怀消息
+机器人主动发起的消息 (定时问候、用药提醒等):
+```json
+{"type": "proactive", "person_id": "妈妈", "text": "妈妈早上好！", "action_type": "greeting"}
+```
+
+```kotlin
+"proactive" -> {
+    val text = json.get("text")?.asString ?: ""
+    val actionType = json.get("action_type")?.asString ?: ""
+    runOnUiThread { addMessage("天天", text, "proactive: $actionType") }
+}
+```
+
 ## 不需要改动的部分
 
 - `AudioCaptureService.kt` — 16kHz PCM 采集不变
@@ -132,8 +177,9 @@ UI 中新增一个 bot_id 输入框（默认值 "default"）。
 | 优先级 | 改动 | 工作量 |
 |--------|------|--------|
 | P0 必须 | TTS 音频格式 WAV 适配 | 1 行 |
+| P0 必须 | state_change 消息处理 | 15 行 |
+| P0 必须 | proactive 消息处理 | 10 行 |
 | P1 推荐 | stop_tts 处理 | 10 行 |
-| P1 推荐 | 思考模式等待指示 | 15 行 |
 | P1 推荐 | reply_done 处理 | 5 行 |
 | P2 可选 | bot_id 可配置 | 10 行 |
 
