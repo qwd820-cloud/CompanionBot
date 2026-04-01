@@ -1,7 +1,15 @@
-"""记忆沉淀 — 对话结束后通过 LLM 提取和存储关键信息"""
+"""记忆沉淀 — 4 阶段记忆整合 (扫描→提取→整合→剪枝)
+
+借鉴 autoDream 设计理念:
+- 扫描: 收集会话数据
+- 提取: LLM 或规则分析对话要点
+- 整合: 写入情景/语义/档案/习惯/绑定
+- 剪枝: 衰减旧记忆，清理低价值数据
+"""
 
 import json
 import logging
+import time
 
 from server.memory.episodic_memory import EpisodicMemory
 from server.memory.long_term_profile import LongTermProfile
@@ -53,12 +61,11 @@ ANALYSIS_PROMPT = """\
 
 class MemoryConsolidation:
     """
-    记忆沉淀流程:
-    1. LLM 总结对话要点 → 生成 event summary
-    2. LLM 评估 importance_score
-    3. 高于阈值的写入情景记忆
-    4. 对话摘要向量化写入语义记忆
-    5. 发现新信息时更新长期档案
+    4 阶段记忆整合:
+    1. 扫描 — 收集会话数据
+    2. 提取 — LLM/规则分析对话要点
+    3. 整合 — 写入情景/语义/档案/习惯/绑定
+    4. 剪枝 — 衰减旧记忆，清理低价值数据
     """
 
     def __init__(
@@ -67,11 +74,14 @@ class MemoryConsolidation:
         semantic: SemanticMemory,
         profile: LongTermProfile,
         llm_client=None,
+        habit_memory=None,
     ):
         self.episodic = episodic
         self.semantic = semantic
         self.profile = profile
         self.llm_client = llm_client
+        self.habit_memory = habit_memory
+        self._consolidation_count = 0
 
     async def consolidate(self, session_data: dict):
         """
@@ -127,6 +137,17 @@ class MemoryConsolidation:
 
             # 更新长期档案
             await self._update_profile(person_id, analysis)
+
+            # === 阶段 3b: 习惯提取 ===
+            await self._extract_habits(person_id, person_turns)
+
+            # === 阶段 3c: 情感绑定更新 ===
+            await self._update_bonding(person_id, analysis, len(person_turns))
+
+        # === 阶段 4: 剪枝 (每 10 次沉淀执行一次) ===
+        self._consolidation_count += 1
+        if self._consolidation_count % 10 == 0:
+            await self._prune_memories()
 
         logger.info(
             f"记忆沉淀完成: session={session_data.get('session_id')}, "
@@ -314,6 +335,93 @@ class MemoryConsolidation:
             if keyword in text:
                 found.add(condition)
         return list(found)
+
+    async def _extract_habits(self, person_id: str, turns: list[dict]):
+        """从对话中提取习惯模式"""
+        if not self.habit_memory:
+            return
+        try:
+            # 话题习惯: 从用户发言中提取高频话题
+            user_texts = [
+                t["text"] for t in turns if t.get("role") == "user" and t.get("text")
+            ]
+            topic_patterns = {
+                "聊天气": ["天气", "下雨", "晴天", "冷", "热"],
+                "聊健康": ["疼", "痛", "不舒服", "吃药", "血压"],
+                "聊做菜": ["做菜", "做饭", "炒菜", "煮", "好吃"],
+                "聊孩子": ["孙子", "孙女", "孩子", "上学", "考试"],
+                "聊回忆": ["以前", "那时候", "小时候", "年轻"],
+            }
+            full_text = " ".join(user_texts)
+            for topic, keywords in topic_patterns.items():
+                if any(k in full_text for k in keywords):
+                    await self.habit_memory.observe(person_id, topic, "topic")
+
+            # 时间习惯: 记录当前时段的互动
+            import datetime
+
+            hour = datetime.datetime.now().hour
+            if 6 <= hour < 9:
+                await self.habit_memory.observe(person_id, "早晨聊天", "time_based")
+            elif 12 <= hour < 14:
+                await self.habit_memory.observe(person_id, "午间聊天", "time_based")
+            elif 18 <= hour < 22:
+                await self.habit_memory.observe(person_id, "晚间聊天", "time_based")
+            elif hour >= 22 or hour < 6:
+                await self.habit_memory.observe(person_id, "深夜聊天", "time_based")
+        except Exception as e:
+            logger.warning(f"习惯提取失败: {e}")
+
+    async def _update_bonding(self, person_id: str, analysis: dict, turn_count: int):
+        """根据对话分析更新情感绑定"""
+        try:
+            emotion = analysis.get("emotion", "neutral")
+            importance = analysis.get("importance", 0.3)
+
+            # 计算绑定变化量
+            delta = 0.0
+            positive = True
+
+            if emotion == "happy":
+                delta = 2.0  # 开心对话大加分
+            elif emotion in ("concerned", "sad"):
+                delta = 1.0  # 关心/倾诉也是正向互动
+            elif emotion == "neutral":
+                delta = 0.5  # 日常对话小加分
+
+            # 对话越长绑定越强 (但有上限)
+            delta += min(turn_count * 0.1, 1.0)
+
+            # 高重要性互动额外加分
+            if importance >= 0.7:
+                delta += 1.0
+
+            await self.profile.update_bonding(person_id, delta, positive)
+        except Exception as e:
+            logger.warning(f"绑定更新失败: {e}")
+
+    async def _prune_memories(self):
+        """剪枝: 衰减旧记忆，清理低价值数据"""
+        logger.info("开始记忆剪枝...")
+        try:
+            # 1. 习惯衰减 (60天未观察 → 置信度 ×0.8)
+            if self.habit_memory:
+                await self.habit_memory.decay(days_threshold=60, decay_factor=0.8)
+
+            # 2. 情景记忆剪枝: 删除 90天前 importance<0.3 的记忆
+            if self.episodic and self.episodic.conn:
+                cutoff = time.time() - 90 * 86400
+                deleted = self.episodic.conn.execute(
+                    "DELETE FROM episodes WHERE importance_score < 0.3 AND timestamp < ?",
+                    (cutoff,),
+                ).rowcount
+                self.episodic.conn.commit()
+                if deleted:
+                    logger.info(f"剪枝: 清理 {deleted} 条低价值情景记忆")
+
+            logger.info("记忆剪枝完成")
+        except Exception as e:
+            logger.error(f"记忆剪枝失败: {e}")
 
     def _format_conversation(self, turns: list[dict]) -> str:
         """格式化对话为文本"""

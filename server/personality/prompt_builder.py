@@ -18,11 +18,13 @@ class PromptBuilder:
         episodic: EpisodicMemory,
         semantic: SemanticMemory,
         profile: LongTermProfile,
+        habit_memory=None,
     ):
         self.personality = personality
         self.episodic = episodic
         self.semantic = semantic
         self.profile = profile
+        self.habit_memory = habit_memory
 
     async def build(self, person_id: str, context: dict) -> list[dict]:
         turns = context.get("turns", [])
@@ -66,6 +68,12 @@ class PromptBuilder:
         memory_prompt = await self._memory_prompt(person_id, recent_query)
         if memory_prompt:
             parts.append(memory_prompt)
+
+        # 习惯记忆
+        if self.habit_memory:
+            habit_prompt = await self.habit_memory.get_all_for_prompt(person_id)
+            if habit_prompt:
+                parts.append(habit_prompt)
 
         custom_prompt = await self._custom_prompt(person_id)
         if custom_prompt:

@@ -38,14 +38,21 @@ class LongTermProfile:
                 updated_at REAL
             )
         """)
-        # 兼容旧数据库: 如果表已存在但缺少 custom_prompt 列，自动添加
-        try:
-            self.conn.execute(
-                "ALTER TABLE family_profiles ADD COLUMN custom_prompt TEXT DEFAULT ''"
-            )
-            self.conn.commit()
-        except sqlite3.OperationalError:
-            pass  # 列已存在
+        # 兼容旧数据库: 自动添加缺失列
+        for col, default in [
+            ("custom_prompt", "TEXT DEFAULT ''"),
+            ("bonding_score", "REAL DEFAULT 50.0"),
+            ("trust_level", "REAL DEFAULT 50.0"),
+            ("last_positive_interaction", "REAL DEFAULT 0"),
+            ("total_interactions", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                self.conn.execute(
+                    f"ALTER TABLE family_profiles ADD COLUMN {col} {default}"
+                )
+                self.conn.commit()
+            except sqlite3.OperationalError:
+                pass  # 列已存在
         self.conn.commit()
         logger.info("长期档案初始化完成")
 
@@ -204,6 +211,61 @@ class LongTermProfile:
         else:
             logger.warning(f"删除失败，成员不存在: {person_id}")
         return deleted
+
+    async def update_bonding(
+        self, person_id: str, delta: float, interaction_positive: bool = True
+    ):
+        """更新情感绑定分 — 正向互动 +delta，负向互动 -delta
+
+        bonding_score 范围 0-100，初始 50。
+        trust_level 随正向互动缓慢增长。
+        """
+        if not self.conn:
+            return
+        now = time.time()
+        row = self.conn.execute(
+            "SELECT bonding_score, trust_level, total_interactions FROM family_profiles WHERE person_id=?",
+            (person_id,),
+        ).fetchone()
+        if not row:
+            return
+
+        bonding = max(0.0, min(100.0, row["bonding_score"] + delta))
+        trust = row["trust_level"]
+        total = row["total_interactions"] + 1
+
+        # trust 随正向互动缓慢增长 (α=0.1)，负向缓慢下降 (α=0.05)
+        if interaction_positive:
+            trust = min(100.0, trust + 0.1 * (100.0 - trust) * 0.1)
+        else:
+            trust = max(0.0, trust - 0.05 * trust * 0.1)
+
+        updates = {
+            "bonding_score": bonding,
+            "trust_level": trust,
+            "total_interactions": total,
+            "updated_at": now,
+        }
+        if interaction_positive:
+            updates["last_positive_interaction"] = now
+
+        set_clause = ", ".join(f"{k}=?" for k in updates)
+        values = list(updates.values()) + [person_id]
+        self.conn.execute(
+            f"UPDATE family_profiles SET {set_clause} WHERE person_id=?",  # noqa: S608
+            values,
+        )
+        self.conn.commit()
+
+    async def get_bonding(self, person_id: str) -> dict:
+        """获取情感绑定信息"""
+        if not self.conn:
+            return {}
+        row = self.conn.execute(
+            "SELECT bonding_score, trust_level, total_interactions, last_positive_interaction FROM family_profiles WHERE person_id=?",
+            (person_id,),
+        ).fetchone()
+        return dict(row) if row else {}
 
     async def get_all_members(self) -> list[dict]:
         """获取所有成员列表"""

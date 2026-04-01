@@ -59,6 +59,7 @@ class BotInstance:
         """初始化所有独立模块"""
         from server.memory.consolidation import MemoryConsolidation
         from server.memory.episodic_memory import EpisodicMemory
+        from server.memory.habit_memory import HabitMemory
         from server.memory.long_term_profile import LongTermProfile
         from server.memory.semantic_memory import SemanticMemory
         from server.memory.working_memory import WorkingMemory
@@ -77,12 +78,14 @@ class BotInstance:
         self.episodic_memory = EpisodicMemory(db_path=db_path)
         self.semantic_memory = SemanticMemory(persist_dir=str(self.data_dir / "chroma"))
         self.long_term_profile = LongTermProfile(db_path=db_path)
+        self.habit_memory = HabitMemory(db_path=db_path)
         self.working_memory = WorkingMemory()
         self.consolidation = MemoryConsolidation(
             episodic=self.episodic_memory,
             semantic=self.semantic_memory,
             profile=self.long_term_profile,
             llm_client=self.shared.llm_client,
+            habit_memory=self.habit_memory,
         )
 
         # 人格层 (独立，可被 personality_overrides 覆盖，情绪持久化到 DB)
@@ -94,6 +97,7 @@ class BotInstance:
             episodic=self.episodic_memory,
             semantic=self.semantic_memory,
             profile=self.long_term_profile,
+            habit_memory=self.habit_memory,
         )
 
         # 输出层 (MiniCPM-o TTS 优先，回退 Edge-TTS/pyttsx3)
@@ -113,6 +117,7 @@ class BotInstance:
         await self.episodic_memory.initialize()
         await self.semantic_memory.initialize()
         await self.long_term_profile.initialize()
+        await self.habit_memory.initialize()
 
         await self.proactive.start()
 
