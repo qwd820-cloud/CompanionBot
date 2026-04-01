@@ -221,10 +221,16 @@ async def _handle_text(shared, bot, client_id: str, text: str):
         await _handle_text_input(shared, bot, client_id, msg)
 
 
+async def _send_state(client_id: str, state: str):
+    """通知客户端当前交互状态"""
+    await manager.send_json_message(client_id, {"type": "state_change", "state": state})
+
+
 async def _process_audio(shared, bot, client_id: str, audio_data: bytes):
     speech_segments = await shared.vad.process(audio_data)
     if speech_segments:
         await manager.send_json_message(client_id, {"type": "stop_tts"})
+        await _send_state(client_id, "listening")
     if not speech_segments:
         return
 
@@ -315,6 +321,7 @@ async def _process_audio(shared, bot, client_id: str, audio_data: bytes):
             should_respond = decision[0]
 
         if should_respond:
+            await _send_state(client_id, "processing")
             await _generate_and_respond(
                 shared,
                 bot,
@@ -322,6 +329,7 @@ async def _process_audio(shared, bot, client_id: str, audio_data: bytes):
                 person_id,
                 audio_segment=segment.audio,
             )
+            await _send_state(client_id, "idle")
 
 
 async def _process_video(shared, bot, client_id: str, frame_data: bytes):
@@ -404,6 +412,7 @@ async def _generate_and_respond(
     )
 
     current_emotion = bot.personality.current_emotion
+    await _send_state(client_id, "responding")
     await manager.send_json_message(
         client_id,
         {
@@ -414,6 +423,7 @@ async def _generate_and_respond(
         },
     )
 
+    await _send_state(client_id, "speaking")
     if reply_audio:
         await manager.send_tts_audio(client_id, reply_audio)
     else:

@@ -1,6 +1,7 @@
-"""人格引擎 + 情绪状态机"""
+"""人格引擎 + 情绪状态机 (支持持久化)"""
 
 import logging
+import sqlite3
 import time
 
 from server.utils.keywords import (
@@ -26,9 +27,12 @@ EMOTION_DECAY_TURNS = 5
 
 
 class PersonalityEngine:
-    """人格引擎 — 管理机器人的性格特质和情绪状态"""
+    """人格引擎 — 管理机器人的性格特质和情绪状态
 
-    def __init__(self, config: dict):
+    情绪状态支持持久化到 SQLite，跨会话延续。
+    """
+
+    def __init__(self, config: dict, db_path: str | None = None):
         personality = config.get("personality", {})
         self.name = personality.get("name", "小伴")
         self.traits = personality.get("traits", {})
@@ -36,9 +40,58 @@ class PersonalityEngine:
         self.adaptation = config.get("adaptation", {})
 
         self.current_emotion = "neutral"
-        self._emotion_turns = 0  # 当前情绪持续的轮次
+        self._emotion_turns = 0
         self._last_interaction_time = time.time()
-        self._interrupt_count = 0  # 被打断次数
+        self._interrupt_count = 0
+        self._db_path = db_path
+
+        # 从 DB 恢复上次情绪
+        if db_path:
+            self._restore_emotion()
+
+    def _restore_emotion(self):
+        """从 SQLite 恢复上次保存的情绪状态"""
+        try:
+            conn = sqlite3.connect(self._db_path)
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS emotion_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    emotion TEXT NOT NULL DEFAULT 'neutral',
+                    updated_at REAL NOT NULL
+                )"""
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT emotion, updated_at FROM emotion_state WHERE id=1"
+            ).fetchone()
+            if row:
+                emotion, updated_at = row
+                age_hours = (time.time() - updated_at) / 3600
+                if emotion in VALID_EMOTIONS and age_hours < 24:
+                    self.current_emotion = emotion
+                    logger.info(f"恢复情绪状态: {emotion} ({age_hours:.1f}h 前)")
+                else:
+                    logger.info(f"情绪状态已过期 ({age_hours:.0f}h)，重置为 neutral")
+            conn.close()
+        except Exception as e:
+            logger.warning(f"恢复情绪状态失败: {e}")
+
+    def _save_emotion(self):
+        """保存当前情绪到 SQLite"""
+        if not self._db_path:
+            return
+        try:
+            conn = sqlite3.connect(self._db_path)
+            conn.execute(
+                """INSERT INTO emotion_state (id, emotion, updated_at)
+                   VALUES (1, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET emotion=excluded.emotion, updated_at=excluded.updated_at""",
+                (self.current_emotion, time.time()),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"保存情绪状态失败: {e}")
 
     def update_emotion(self, context: dict, reply_text: str):
         """根据对话上下文更新情绪状态"""
@@ -75,6 +128,7 @@ class PersonalityEngine:
             self._emotion_turns = 0
 
         self._last_interaction_time = time.time()
+        self._save_emotion()
 
     def _infer_emotion(self, text: str) -> str:
         """从用户文本推断应有的情绪反应"""
@@ -97,6 +151,7 @@ class PersonalityEngine:
         if self._interrupt_count >= 3:
             self.current_emotion = "slightly_annoyed"
             self._emotion_turns = 0
+            self._save_emotion()
 
     def get_emotion_modifiers(self) -> dict:
         """获取当前情绪对回复的影响参数"""

@@ -49,9 +49,19 @@ class PromptBuilder:
         parts = []
         parts.append(self._personality_prompt())
 
+        # 情绪指令 — 让 LLM 回复风格随情绪变化
+        emotion_prompt = self._emotion_prompt()
+        if emotion_prompt:
+            parts.append(emotion_prompt)
+
         profile_prompt = await self._profile_prompt(person_id)
         if profile_prompt:
             parts.append(profile_prompt)
+
+        # 角色适配 — 对老人/小孩用不同风格
+        role_prompt = await self._role_adaptation_prompt(person_id)
+        if role_prompt:
+            parts.append(role_prompt)
 
         memory_prompt = await self._memory_prompt(person_id, recent_query)
         if memory_prompt:
@@ -74,6 +84,55 @@ class PromptBuilder:
 2. 简短自然，一两句话，像发微信
 3. 问什么答什么，别主动嘘寒问暖
 4. 不知道的事就说不知道，不要编造、不要说谎、不要假装知道"""
+
+    def _emotion_prompt(self) -> str:
+        """根据当前情绪生成回复风格指令"""
+        emotion = self.personality.current_emotion
+        if emotion == "neutral":
+            return ""
+        modifiers = self.personality.get_emotion_modifiers()
+        tone_words = modifiers.get("tone_words", [])
+        length = modifiers.get("length_factor", 1.0)
+
+        instructions = {
+            "happy": "你现在心情很好，回复要带点开心的语气。",
+            "concerned": "你现在有点担心对方，回复要体现关心和关切。",
+            "tired": "你现在有点累，回复简短一些。",
+            "curious": "你现在很好奇，可以追问细节。",
+            "slightly_annoyed": "你稍微有点不耐烦，回复简洁直接。",
+        }
+        prompt = instructions.get(emotion, "")
+        if tone_words:
+            prompt += f"可以适当使用: {'、'.join(tone_words)}"
+        if length < 1.0:
+            prompt += " 尽量简短。"
+        elif length > 1.0:
+            prompt += " 可以多说几句。"
+        return f"当前情绪: {prompt}" if prompt else ""
+
+    async def _role_adaptation_prompt(self, person_id: str) -> str:
+        """根据对话对象角色生成适配指令"""
+        if person_id in ("unknown", "bot"):
+            return ""
+        profile = await self.profile.get_profile(person_id)
+        if not profile:
+            return ""
+        role = profile.get("role", "adult")
+        adaptation = self.personality.get_adaptation(role)
+        if not adaptation:
+            return ""
+
+        parts = []
+        vocab = adaptation.get("vocabulary", "")
+        if vocab:
+            parts.append(f"用词风格: {vocab}")
+        topics = adaptation.get("topics", [])
+        if topics:
+            parts.append(f"适合话题: {'、'.join(topics)}")
+        avoid = adaptation.get("avoid", [])
+        if avoid:
+            parts.append(f"避免: {'、'.join(avoid)}")
+        return f"对话风格: {'; '.join(parts)}" if parts else ""
 
     async def _profile_prompt(self, person_id: str) -> str:
         if person_id in ("unknown", "bot"):

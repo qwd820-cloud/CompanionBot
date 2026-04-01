@@ -85,9 +85,9 @@ class BotInstance:
             llm_client=self.shared.llm_client,
         )
 
-        # 人格层 (独立，可被 personality_overrides 覆盖)
+        # 人格层 (独立，可被 personality_overrides 覆盖，情绪持久化到 DB)
         merged_cfg = self._merge_personality_config(personality_cfg)
-        self.personality = PersonalityEngine(config=merged_cfg)
+        self.personality = PersonalityEngine(config=merged_cfg, db_path=db_path)
         self.intervention = InterventionDecider()
         self.prompt_builder = PromptBuilder(
             personality=self.personality,
@@ -105,8 +105,9 @@ class BotInstance:
         self.anomaly_detector = AnomalyDetector()
         self.alert_manager = AlertManager(notification=self.notification)
 
-        # 主动行为
+        # 主动行为 — 接入 WebSocket 回调
         self.proactive = ProactiveScheduler()
+        self.proactive.set_send_callback(self._proactive_send)
 
         # 初始化数据库
         await self.episodic_memory.initialize()
@@ -140,6 +141,39 @@ class BotInstance:
             personality["quirks"] = overrides["quirks"]
 
         return merged
+
+    async def _proactive_send(self, person_id: str, message: str, action_type: str):
+        """主动行为回调 — 将消息和 TTS 音频发送到所有连接的客户端"""
+        from server.ws_handler import manager
+
+        clients = manager.get_clients_for_bot(self.bot_id)
+        if not clients:
+            logger.debug(f"主动消息未发送 (无在线客户端): {message[:30]}...")
+            return
+
+        # 生成 TTS 音频
+        audio_data = None
+        try:
+            audio_data = await self.tts.synthesize(text=message, emotion="neutral")
+        except Exception as e:
+            logger.warning(f"主动消息 TTS 失败: {e}")
+
+        for client_id in clients:
+            await manager.send_json_message(
+                client_id,
+                {
+                    "type": "proactive",
+                    "person_id": person_id,
+                    "text": message,
+                    "action_type": action_type,
+                },
+            )
+            if audio_data:
+                await manager.send_tts_audio(client_id, audio_data)
+
+        logger.info(
+            f"主动消息已发送到 {len(clients)} 个客户端: [{action_type}] {message[:30]}..."
+        )
 
     async def shutdown(self):
         """关闭实例"""
