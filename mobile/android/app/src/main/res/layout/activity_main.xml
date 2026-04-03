@@ -1,161 +1,138 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:background="@color/background_dark">
 
-    <!-- 状态栏: 连接 + 说话人 + 情绪 -->
+    <!-- ===== 顶栏 ===== -->
     <LinearLayout
+        android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingBottom="8dp">
+        android:padding="16dp"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <!-- 连接状态灯 -->
+        <View
+            android:id="@+id/statusDot"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:background="@color/status_disconnected" />
 
         <TextView
-            android:id="@+id/tvStatus"
+            android:id="@+id/tvTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="状态: 未连接"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            android:text="天天"
+            android:textColor="@color/text_primary"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginStart="10dp" />
 
-        <TextView
-            android:id="@+id/tvSpeaker"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text=""
-            android:textSize="13sp"
-            android:textColor="#1976D2"
-            android:paddingStart="8dp" />
-
-        <TextView
-            android:id="@+id/tvEmotion"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text=""
-            android:textSize="13sp"
-            android:textColor="#FF9800"
-            android:paddingStart="8dp" />
+        <!-- 设置齿轮 -->
+        <ImageView
+            android:id="@+id/btnSettings"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:src="@android:drawable/ic_menu_manage"
+            android:contentDescription="设置"
+            android:padding="4dp" />
     </LinearLayout>
 
-    <!-- 服务器地址 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-
-        <EditText
-            android:id="@+id/etServerUrl"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="ws://192.168.1.100:8765"
-            android:inputType="textUri"
-            android:singleLine="true"
-            android:textSize="14sp" />
-
-        <Button
-            android:id="@+id/btnConnect"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="连接"
-            android:layout_marginStart="8dp" />
-    </LinearLayout>
-
-    <!-- 控制按钮行 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="8dp">
-
-        <Button
-            android:id="@+id/btnListen"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="开始监听"
-            android:enabled="false" />
-
-        <Button
-            android:id="@+id/btnEnroll"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="注册成员"
-            android:enabled="false"
-            android:layout_marginStart="8dp" />
-    </LinearLayout>
-
-    <!-- 对话区域 -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="对话记录"
-        android:textStyle="bold"
-        android:layout_marginTop="12dp" />
-
-    <ScrollView
-        android:id="@+id/scrollView"
-        android:layout_width="match_parent"
+    <!-- ===== 中心 Lottie 动画区域 ===== -->
+    <com.airbnb.lottie.LottieAnimationView
+        android:id="@+id/lottieView"
+        android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="#F5F5F5"
-        android:padding="8dp">
+        app:layout_constraintTop_toBottomOf="@id/topBar"
+        app:layout_constraintBottom_toTopOf="@id/stateLabel"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHeight_percent="0.40"
+        app:lottie_rawRes="@raw/anim_disconnected"
+        app:lottie_loop="true"
+        app:lottie_autoPlay="true" />
 
-        <TextView
-            android:id="@+id/tvChatLog"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="14sp" />
-    </ScrollView>
-
-    <!-- 文本输入 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="8dp">
-
-        <EditText
-            android:id="@+id/etTextInput"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="输入文本对话..."
-            android:singleLine="true" />
-
-        <Button
-            android:id="@+id/btnSendText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="发送"
-            android:enabled="false"
-            android:layout_marginStart="8dp" />
-    </LinearLayout>
-
-    <!-- 状态日志 -->
+    <!-- 状态文字 -->
     <TextView
-        android:layout_width="match_parent"
+        android:id="@+id/stateLabel"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="系统日志"
-        android:textStyle="bold"
+        android:text="未连接"
+        android:textColor="@color/text_secondary"
+        android:textSize="16sp"
+        app:layout_constraintTop_toBottomOf="@id/lottieView"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
         android:layout_marginTop="8dp" />
 
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="120dp"
-        android:background="#EEEEEE"
-        android:padding="4dp">
+    <!-- 情绪标签 -->
+    <TextView
+        android:id="@+id/tvEmotion"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/text_hint"
+        android:textSize="13sp"
+        app:layout_constraintTop_toBottomOf="@id/stateLabel"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="4dp" />
 
+    <!-- ===== 底部区域：最后回复 + 最近对话 ===== -->
+    <LinearLayout
+        android:id="@+id/bottomArea"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:orientation="vertical"
+        android:gravity="bottom"
+        android:padding="20dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tvEmotion"
+        app:layout_constraintHeight_percent="0.35">
+
+        <!-- 最后回复文本（大字体，醒目） -->
         <TextView
-            android:id="@+id/tvStatusLog"
+            android:id="@+id/tvLastReply"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="11sp"
-            android:textColor="#666666" />
-    </ScrollView>
-</LinearLayout>
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:gravity="center"
+            android:maxLines="3"
+            android:ellipsize="end"
+            android:layout_marginBottom="16dp" />
+
+        <!-- 分隔线 -->
+        <View
+            android:id="@+id/divider"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/text_hint"
+            android:alpha="0.3"
+            android:visibility="gone" />
+
+        <!-- 最近对话 -->
+        <ScrollView
+            android:id="@+id/chatScrollView"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="8dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvChatLog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:alpha="0.7" />
+        </ScrollView>
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

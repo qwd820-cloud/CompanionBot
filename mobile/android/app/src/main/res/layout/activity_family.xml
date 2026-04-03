@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <TextView
+        android:id="@+id/tvEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@id/btnAddMember"
+        android:gravity="center"
+        android:text="暂无家庭成员"
+        android:textSize="16sp"
+        android:textColor="#999999"
+        android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvMembers"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@id/btnAddMember" />
+
+    <Button
+        android:id="@+id/btnAddMember"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:text="新增家庭成员"
+        android:layout_margin="16dp"
+        android:backgroundTint="#1976D2"
+        android:textColor="#FFFFFF" />
+</RelativeLayout>

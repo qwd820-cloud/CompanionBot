@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="服务器地址"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginTop="8dp" />
+
+    <EditText
+        android:id="@+id/etServerUrl"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="ws://192.168.0.127:8765"
+        android:inputType="textUri"
+        android:singleLine="true"
+        android:textSize="15sp"
+        android:layout_marginTop="4dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="客户端 ID"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginTop="16dp" />
+
+    <EditText
+        android:id="@+id/etClientId"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="android_client_01"
+        android:inputType="text"
+        android:singleLine="true"
+        android:textSize="15sp"
+        android:layout_marginTop="4dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Bot ID"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginTop="16dp" />
+
+    <EditText
+        android:id="@+id/etBotId"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="default"
+        android:inputType="text"
+        android:singleLine="true"
+        android:textSize="15sp"
+        android:layout_marginTop="4dp" />
+
+    <!-- 显示对话文本开关 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="24dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="显示对话文本"
+            android:textSize="15sp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switchShowChat"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="开启后在主界面底部显示近期对话文本"
+        android:textSize="12sp"
+        android:textColor="#999999"
+        android:layout_marginTop="2dp" />
+
+    <!-- 家庭成员管理 -->
+    <Button
+        android:id="@+id/btnEnroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="家庭成员管理"
+        android:layout_marginTop="32dp" />
+
+    <!-- 检查更新 -->
+    <Button
+        android:id="@+id/btnCheckUpdate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="检查更新"
+        android:layout_marginTop="16dp" />
+
+    <!-- 保存按钮 -->
+    <Button
+        android:id="@+id/btnSave"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="保存设置"
+        android:layout_marginTop="16dp"
+        android:backgroundTint="#1976D2" />
+
+    <!-- 底部版本信息 -->
+    <View
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="CompanionBot v0.1"
+        android:textSize="12sp"
+        android:textColor="#AAAAAA"
+        android:gravity="center"
+        android:layout_marginBottom="8dp" />
+</LinearLayout>

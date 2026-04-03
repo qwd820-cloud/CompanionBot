@@ -93,9 +93,11 @@ class EnrollActivity : AppCompatActivity(), WebSocketClient.WebSocketListener {
         setupListeners()
 
         wsClient = WebSocketClient(this)
-        val serverUrl = intent.getStringExtra(EXTRA_SERVER_URL) ?: "ws://192.168.1.100:8765"
+        val serverUrl = intent.getStringExtra(EXTRA_SERVER_URL) ?: "ws://192.168.0.127:8765"
         val clientId = intent.getStringExtra(EXTRA_CLIENT_ID) ?: "android_enroll"
-        wsClient.connect(serverUrl, clientId)
+        val prefs = getSharedPreferences(SettingsActivity.PREFS_NAME, MODE_PRIVATE)
+        val botId = prefs.getString(SettingsActivity.KEY_BOT_ID, SettingsActivity.DEFAULT_BOT_ID)!!
+        wsClient.connect(serverUrl, botId, clientId)
 
         showStep(1)
     }

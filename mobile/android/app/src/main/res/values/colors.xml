@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 主背景 -->
+    <color name="background_dark">#1A1A2E</color>
+    <color name="background_surface">#16213E</color>
+    <color name="text_primary">#EAEAEA</color>
+    <color name="text_secondary">#8899AA</color>
+    <color name="text_hint">#556677</color>
+
+    <!-- 状态指示灯 -->
+    <color name="status_connected">#4CAF50</color>
+    <color name="status_disconnected">#F44336</color>
+    <color name="status_connecting">#FFC107</color>
+
+    <!-- 情绪颜色 -->
+    <color name="emotion_neutral">#5C9CE6</color>
+    <color name="emotion_happy">#FFD54F</color>
+    <color name="emotion_concerned">#FF9800</color>
+    <color name="emotion_tired">#9575CD</color>
+    <color name="emotion_curious">#4DB6AC</color>
+    <color name="emotion_slightly_annoyed">#EF9A9A</color>
+
+    <!-- 动画基础色 -->
+    <color name="ripple_base">#335C9CE6</color>
+    <color name="speaking_bar">#5C9CE6</color>
+</resources>

@@ -1,9 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.CompanionBot" parent="Theme.MaterialComponents.Light.DarkActionBar">
+    <style name="Theme.CompanionBot" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#5C9CE6</item>
+        <item name="colorPrimaryVariant">#3D7BC8</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#FF9800</item>
+        <item name="android:windowBackground">@color/background_dark</item>
+        <item name="android:statusBarColor">@color/background_dark</item>
+        <item name="android:navigationBarColor">@color/background_dark</item>
+    </style>
+
+    <!-- 设置页面使用浅色主题 -->
+    <style name="Theme.CompanionBot.Settings" parent="Theme.MaterialComponents.Light.DarkActionBar">
         <item name="colorPrimary">#1976D2</item>
         <item name="colorPrimaryVariant">#1565C0</item>
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorSecondary">#FF9800</item>
     </style>
 </resources>

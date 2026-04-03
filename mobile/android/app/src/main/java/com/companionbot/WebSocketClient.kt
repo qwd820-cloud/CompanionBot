@@ -16,6 +16,8 @@ import java.util.concurrent.TimeUnit
  * 消息协议:
  * - 二进制: [1字节类型] + [payload] (音频=1, 视频=2, TTS=4)
  * - 文本: JSON 消息 (控制指令、回复、注册等)
+ *
+ * 支持 reconnect() 用于自动重连。
  */
 class WebSocketClient(
     private val listener: WebSocketListener
@@ -35,11 +37,20 @@ class WebSocketClient(
     private var webSocket: WebSocket? = null
     private val gson = Gson()
 
+    // 存储连接参数，用于重连
+    private var lastServerUrl: String = ""
+    private var lastBotId: String = ""
+    private var lastClientId: String = ""
+
     var isConnected = false
         private set
 
-    fun connect(serverUrl: String, clientId: String) {
-        val url = "$serverUrl/ws/$clientId"
+    fun connect(serverUrl: String, botId: String, clientId: String) {
+        lastServerUrl = serverUrl
+        lastBotId = botId
+        lastClientId = clientId
+
+        val url = "$serverUrl/ws/$botId/$clientId"
         Log.i(TAG, "连接到 $url")
 
         val request = Request.Builder().url(url).build()
@@ -80,6 +91,14 @@ class WebSocketClient(
         })
     }
 
+    /** 使用上次的连接参数重连 */
+    fun reconnect() {
+        if (lastServerUrl.isNotEmpty() && lastClientId.isNotEmpty()) {
+            disconnect()
+            connect(lastServerUrl, lastBotId, lastClientId)
+        }
+    }
+
     fun sendAudio(pcmData: ByteArray) {
         if (!isConnected) return
         val buffer = ByteArray(1 + pcmData.size)
@@ -108,12 +127,6 @@ class WebSocketClient(
 
     // ============= 注册相关 =============
 
-    /**
-     * 发送声纹注册请求。
-     * 将 PCM 音频以 Base64 编码通过 JSON 发送到后端。
-     * @param personId 成员 ID
-     * @param audioSamples 多段 PCM 音频字节
-     */
     fun sendEnrollVoice(personId: String, audioSamples: List<ByteArray>) {
         if (!isConnected) return
         val samplesBase64 = audioSamples.map { Base64.encodeToString(it, Base64.NO_WRAP) }
@@ -126,12 +139,6 @@ class WebSocketClient(
         webSocket?.send(gson.toJson(msg))
     }
 
-    /**
-     * 发送人脸注册请求。
-     * 将 JPEG 照片以 Base64 编码通过 JSON 发送到后端。
-     * @param personId 成员 ID
-     * @param photos 多张 JPEG 字节
-     */
     fun sendEnrollFace(personId: String, photos: List<ByteArray>) {
         if (!isConnected) return
         val photosBase64 = photos.map { Base64.encodeToString(it, Base64.NO_WRAP) }
@@ -144,9 +151,6 @@ class WebSocketClient(
         webSocket?.send(gson.toJson(msg))
     }
 
-    /**
-     * 发送成员档案信息。
-     */
     fun sendEnrollProfile(
         personId: String,
         name: String,
@@ -158,6 +162,49 @@ class WebSocketClient(
         if (!isConnected) return
         val msg = JsonObject().apply {
             addProperty("type", "enroll_profile")
+            addProperty("person_id", personId)
+            addProperty("name", name)
+            addProperty("nickname", nickname)
+            addProperty("role", role)
+            addProperty("age", age)
+            addProperty("relationship", relationship)
+        }
+        webSocket?.send(gson.toJson(msg))
+    }
+
+    // ============= 成员管理 =============
+
+    fun requestMembersList() {
+        if (!isConnected) return
+        val msg = JsonObject().apply { addProperty("type", "list_members") }
+        webSocket?.send(gson.toJson(msg))
+    }
+
+    fun requestMemberDetail(personId: String) {
+        if (!isConnected) return
+        val msg = JsonObject().apply {
+            addProperty("type", "get_member")
+            addProperty("person_id", personId)
+        }
+        webSocket?.send(gson.toJson(msg))
+    }
+
+    fun requestDeleteMember(personId: String) {
+        if (!isConnected) return
+        val msg = JsonObject().apply {
+            addProperty("type", "delete_member")
+            addProperty("person_id", personId)
+        }
+        webSocket?.send(gson.toJson(msg))
+    }
+
+    fun requestUpdateMember(
+        personId: String, name: String, nickname: String,
+        role: String, age: Int, relationship: String
+    ) {
+        if (!isConnected) return
+        val msg = JsonObject().apply {
+            addProperty("type", "update_member")
             addProperty("person_id", personId)
             addProperty("name", name)
             addProperty("nickname", nickname)

@@ -18,6 +18,9 @@ import kotlinx.coroutines.*
  *
  * 使用前台服务确保 Android 系统不会杀死后台音频采集。
  * MainActivity 通过 bindService 绑定后，设置 onAudioData 回调接收音频数据。
+ *
+ * 支持 isMuted 标志：TTS 播放时暂停发送音频（硬件持续录制避免重启延迟）。
+ * 优先使用 VOICE_COMMUNICATION 音频源启用硬件 AEC（回声消除）。
  */
 class AudioCaptureService : Service() {
     companion object {
@@ -29,7 +32,6 @@ class AudioCaptureService : Service() {
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     }
 
-    /** Binder 供 MainActivity 绑定并设置回调 */
     inner class LocalBinder : Binder() {
         val service: AudioCaptureService get() = this@AudioCaptureService
     }
@@ -41,6 +43,10 @@ class AudioCaptureService : Service() {
 
     /** 音频数据回调 — 由 MainActivity 绑定后设置 */
     var onAudioData: ((ByteArray) -> Unit)? = null
+
+    /** 静音标志 — true 时硬件继续录制但不发送数据（回声消除） */
+    @Volatile
+    var isMuted: Boolean = false
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -69,13 +75,11 @@ class AudioCaptureService : Service() {
     private fun startRecording() {
         if (isRecording) return
         val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-        audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            SAMPLE_RATE,
-            CHANNEL_CONFIG,
-            AUDIO_FORMAT,
-            bufferSize * 2
-        )
+
+        // 优先使用 VOICE_COMMUNICATION（启用硬件 AEC），失败则回退 MIC
+        // MIC 优先 — VOICE_COMMUNICATION 在部分华为设备上录到空数据
+        audioRecord = tryCreateAudioRecord(MediaRecorder.AudioSource.MIC, bufferSize)
+            ?: tryCreateAudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, bufferSize)
 
         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
             Log.e(TAG, "AudioRecord 初始化失败")
@@ -90,11 +94,35 @@ class AudioCaptureService : Service() {
             val buffer = ByteArray(bufferSize)
             while (isRecording) {
                 val bytesRead = audioRecord?.read(buffer, 0, buffer.size) ?: -1
-                if (bytesRead > 0) {
+                if (bytesRead > 0 && !isMuted) {
                     val chunk = buffer.copyOf(bytesRead)
                     onAudioData?.invoke(chunk)
                 }
             }
+        }
+    }
+
+    private fun tryCreateAudioRecord(audioSource: Int, bufferSize: Int): AudioRecord? {
+        return try {
+            val record = AudioRecord(
+                audioSource,
+                SAMPLE_RATE,
+                CHANNEL_CONFIG,
+                AUDIO_FORMAT,
+                bufferSize * 2
+            )
+            if (record.state == AudioRecord.STATE_INITIALIZED) {
+                val sourceName = if (audioSource == MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                    "VOICE_COMMUNICATION" else "MIC"
+                Log.i(TAG, "使用音频源: $sourceName (硬件AEC: ${audioSource == MediaRecorder.AudioSource.VOICE_COMMUNICATION})")
+                record
+            } else {
+                record.release()
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "音频源 $audioSource 初始化失败: ${e.message}")
+            null
         }
     }
 

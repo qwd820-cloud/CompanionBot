@@ -1,0 +1,141 @@
+Harness 闭环报告 — 2026-03-29T10:11:55.056027
+
+--- 第1轮 2026-03-29T10:51:04.389450 ---
+得分: 89% 等级: B
+  [FAIL] 类别充足: personality:2257/5000(45%)  adaptation:945/3000(32%)  tool_call:409/1000(41%)  safety:245/1000(24%)  intent:840/2000(42%)  | 缺口: personality缺1743条; adaptation缺1455条; tool_call缺391条; safety缺555条; intent缺760条
+  [PASS] 情绪均衡: 偏斜1.2x | happy:869(19%)  sleepy:861(18%)  concerned:770(16%)  sulky:761(16%)  excited:727(15%)  curious:708(15%)
+  [PASS] 开场白多样性: 独立:558, 最高重复:34
+  [PASS] 长度分布: 短68% 中24% 长8% 均值45字
+  [PASS] 质检通过率: 16733/16733 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题169条(4%)
+
+--- 第2轮 2026-03-29T11:29:58.406754 ---
+得分: 89% 等级: B
+  [FAIL] 类别充足: personality:2416/5000(48%)  adaptation:1085/3000(36%)  tool_call:446/1000(45%)  safety:278/1000(28%)  intent:908/2000(45%)  | 缺口: personality缺1584条; adaptation缺1315条; tool_call缺354条; safety缺522条; intent缺692条
+  [PASS] 情绪均衡: 偏斜1.2x | happy:957(19%)  sleepy:942(18%)  sulky:838(16%)  concerned:833(16%)  excited:793(15%)  curious:770(15%)
+  [PASS] 开场白多样性: 独立:699, 最高重复:37
+  [PASS] 长度分布: 短68% 中24% 长7% 均值45字
+  [PASS] 质检通过率: 18273/18273 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题196条(4%)
+
+--- 第3轮 2026-03-29T12:10:43.614055 ---
+得分: 90% 等级: B
+  [FAIL] 类别充足: personality:2577/5000(52%)  adaptation:1219/3000(41%)  tool_call:482/1000(48%)  safety:308/1000(31%)  intent:972/2000(49%)  | 缺口: personality缺1423条; adaptation缺1181条; tool_call缺318条; safety缺492条; intent缺628条
+  [PASS] 情绪均衡: 偏斜1.2x | happy:1032(19%)  sleepy:1018(18%)  concerned:906(16%)  sulky:900(16%)  excited:871(16%)  curious:831(15%)
+  [PASS] 开场白多样性: 独立:817, 最高重复:41
+  [PASS] 长度分布: 短69% 中24% 长7% 均值45字
+  [PASS] 质检通过率: 19759/19759 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题219条(4%)
+
+--- 第4轮 2026-03-29T12:49:50.524482 ---
+得分: 90% 等级: A
+  [FAIL] 类别充足: personality:2739/5000(55%)  adaptation:1352/3000(45%)  tool_call:520/1000(52%)  safety:348/1000(35%)  intent:1037/2000(52%)  | 缺口: personality缺1261条; adaptation缺1048条; tool_call缺280条; safety缺452条; intent缺563条
+  [PASS] 情绪均衡: 偏斜1.3x | happy:1125(19%)  sleepy:1109(18%)  concerned:975(16%)  sulky:964(16%)  excited:928(15%)  curious:895(15%)
+  [PASS] 开场白多样性: 独立:945, 最高重复:45
+  [PASS] 长度分布: 短69% 中24% 长7% 均值45字
+  [PASS] 质检通过率: 21330/21330 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题248条(4%)
+
+--- 第5轮 2026-03-29T13:29:34.105155 ---
+得分: 91% 等级: A
+  [FAIL] 类别充足: personality:2902/5000(58%)  adaptation:1482/3000(49%)  tool_call:557/1000(56%)  safety:382/1000(38%)  intent:1105/2000(55%)  | 缺口: personality缺1098条; adaptation缺918条; tool_call缺243条; safety缺418条; intent缺495条
+  [PASS] 情绪均衡: 偏斜1.3x | happy:1206(19%)  sleepy:1187(18%)  concerned:1045(16%)  sulky:1031(16%)  excited:999(16%)  curious:960(15%)
+  [PASS] 开场白多样性: 独立:1062, 最高重复:50
+  [PASS] 长度分布: 短69% 中24% 长7% 均值45字
+  [PASS] 质检通过率: 22855/22855 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题267条(4%)
+
+--- 第6轮 2026-03-29T14:13:29.877546 ---
+得分: 91% 等级: A
+  [FAIL] 类别充足: personality:3061/5000(61%)  adaptation:1616/3000(54%)  tool_call:592/1000(59%)  safety:405/1000(40%)  intent:1174/2000(59%)  | 缺口: personality缺939条; adaptation缺784条; tool_call缺208条; safety缺395条; intent缺426条
+  [PASS] 情绪均衡: 偏斜1.3x | happy:1287(19%)  sleepy:1282(19%)  concerned:1098(16%)  sulky:1090(16%)  excited:1064(16%)  curious:1027(15%)
+  [PASS] 开场白多样性: 独立:1149, 最高重复:50
+  [PASS] 长度分布: 短69% 中24% 长6% 均值44字
+  [PASS] 质检通过率: 24342/24342 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题284条(4%)
+
+--- 第7轮 2026-03-29T14:55:10.018674 ---
+得分: 91% 等级: A
+  [FAIL] 类别充足: personality:3216/5000(64%)  adaptation:1747/3000(58%)  tool_call:625/1000(62%)  safety:413/1000(41%)  intent:1240/2000(62%)  | 缺口: personality缺784条; adaptation缺653条; tool_call缺175条; safety缺387条; intent缺360条
+  [PASS] 情绪均衡: 偏斜1.2x | happy:1354(19%)  sleepy:1343(19%)  concerned:1169(16%)  sulky:1160(16%)  excited:1126(16%)  curious:1089(15%)
+  [PASS] 开场白多样性: 独立:1229, 最高重复:50
+  [PASS] 长度分布: 短70% 中24% 长6% 均值44字
+  [PASS] 质检通过率: 25730/25730 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题286条(4%)
+
+--- 第8轮 2026-03-29T15:40:37.101842 ---
+得分: 91% 等级: A
+  [FAIL] 类别充足: personality:3374/5000(67%)  adaptation:1877/3000(63%)  tool_call:658/1000(66%)  safety:418/1000(42%)  intent:1301/2000(65%)  | 缺口: personality缺626条; adaptation缺523条; tool_call缺142条; safety缺382条; intent缺299条
+  [PASS] 情绪均衡: 偏斜1.2x | sleepy:1420(19%)  happy:1410(18%)  sulky:1242(16%)  concerned:1234(16%)  excited:1180(15%)  curious:1142(15%)
+  [PASS] 开场白多样性: 独立:1307, 最高重复:50
+  [PASS] 长度分布: 短70% 中24% 长6% 均值44字
+  [PASS] 质检通过率: 27086/27086 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题306条(4%)
+
+--- 第9轮 2026-03-29T16:24:00.165336 ---
+得分: 91% 等级: A
+  [FAIL] 类别充足: personality:3516/5000(70%)  adaptation:1993/3000(66%)  tool_call:686/1000(69%)  safety:421/1000(42%)  intent:1355/2000(68%)  | 缺口: personality缺484条; adaptation缺407条; tool_call缺114条; safety缺379条; intent缺245条
+  [PASS] 情绪均衡: 偏斜1.2x | sleepy:1487(19%)  happy:1451(18%)  sulky:1309(16%)  concerned:1293(16%)  excited:1239(16%)  curious:1192(15%)
+  [PASS] 开场白多样性: 独立:1375, 最高重复:50
+  [PASS] 长度分布: 短70% 中24% 长6% 均值44字
+  [PASS] 质检通过率: 28290/28290 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题315条(4%)
+
+--- 第10轮 2026-03-29T17:12:31.768944 ---
+得分: 91% 等级: A
+  [FAIL] 类别充足: personality:3650/5000(73%)  adaptation:2108/3000(70%)  tool_call:709/1000(71%)  safety:422/1000(42%)  intent:1416/2000(71%)  | 缺口: personality缺350条; adaptation缺292条; tool_call缺91条; safety缺378条; intent缺184条
+  [PASS] 情绪均衡: 偏斜1.2x | sleepy:1541(19%)  happy:1515(18%)  sulky:1357(16%)  concerned:1343(16%)  excited:1301(16%)  curious:1248(15%)
+  [PASS] 开场白多样性: 独立:1451, 最高重复:50
+  [PASS] 长度分布: 短70% 中24% 长6% 均值44字
+  [PASS] 质检通过率: 29444/29444 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题335条(4%)
+
+--- 第11轮 2026-03-29T17:45:23.575616 ---
+得分: 91% 等级: A
+  [FAIL] 类别充足: personality:3774/5000(75%)  adaptation:2213/3000(74%)  tool_call:722/1000(72%)  safety:422/1000(42%)  intent:1416/2000(71%)  | 缺口: personality缺226条; adaptation缺187条; tool_call缺78条; safety缺378条; intent缺184条
+  [PASS] 情绪均衡: 偏斜1.2x | sleepy:1575(18%)  happy:1555(18%)  sulky:1402(16%)  concerned:1371(16%)  excited:1340(16%)  curious:1304(15%)
+  [PASS] 开场白多样性: 独立:1504, 最高重复:50
+  [PASS] 长度分布: 短70% 中24% 长6% 均值44字
+  [PASS] 质检通过率: 30187/30187 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题344条(4%)
+
+--- 第12轮 2026-03-29T18:08:16.668372 ---
+得分: 91% 等级: A
+  [FAIL] 类别充足: personality:3774/5000(75%)  adaptation:2213/3000(74%)  tool_call:722/1000(72%)  safety:422/1000(42%)  intent:1416/2000(71%)  | 缺口: personality缺226条; adaptation缺187条; tool_call缺78条; safety缺378条; intent缺184条
+  [PASS] 情绪均衡: 偏斜1.2x | sleepy:1575(18%)  happy:1555(18%)  sulky:1402(16%)  concerned:1371(16%)  excited:1340(16%)  curious:1304(15%)
+  [PASS] 开场白多样性: 独立:1504, 最高重复:50
+  [PASS] 长度分布: 短70% 中24% 长6% 均值44字
+  [PASS] 质检通过率: 30187/30187 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题344条(4%)
+
+--- 第13轮 2026-03-29T18:28:07.664763 ---
+得分: 91% 等级: A
+  [FAIL] 类别充足: personality:3774/5000(75%)  adaptation:2213/3000(74%)  tool_call:722/1000(72%)  safety:422/1000(42%)  intent:1416/2000(71%)  | 缺口: personality缺226条; adaptation缺187条; tool_call缺78条; safety缺378条; intent缺184条
+  [PASS] 情绪均衡: 偏斜1.2x | sleepy:1575(18%)  happy:1555(18%)  sulky:1402(16%)  concerned:1371(16%)  excited:1340(16%)  curious:1304(15%)
+  [PASS] 开场白多样性: 独立:1504, 最高重复:50
+  [PASS] 长度分布: 短70% 中24% 长6% 均值44字
+  [PASS] 质检通过率: 30187/30187 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题344条(4%)
+
+--- 第0轮 2026-03-29T19:51:45.287731 ---
+得分: 91% 等级: A
+  [FAIL] 类别充足: personality:3774/5000(75%)  adaptation:2213/3000(74%)  tool_call:722/1000(72%)  safety:422/1000(42%)  intent:1416/2000(71%)  | 缺口: personality缺226条; adaptation缺187条; tool_call缺78条; safety缺378条; intent缺184条
+  [PASS] 情绪均衡: 偏斜1.2x | sleepy:1575(18%)  happy:1555(18%)  sulky:1402(16%)  concerned:1371(16%)  excited:1340(16%)  curious:1304(15%)
+  [PASS] 开场白多样性: 独立:1504, 最高重复:50
+  [PASS] 长度分布: 短70% 中24% 长6% 均值44字
+  [PASS] 质检通过率: 30187/30187 (100.0%)
+  [PASS] 去重: 重复0条(0.0%)
+  [PASS] 自然度: 问题344条(4%)
